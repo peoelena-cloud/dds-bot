@@ -5,7 +5,7 @@ const https = require("https");
 // НАСТРОЙКИ — ЗАМЕНИТЕ ТОКЕН ПОСЛЕ /revoke !
 // ═══════════════════════════════════════════════════
 const BOT_TOKEN = "8410628068:AAGseZ3UI7elPdJi_p7BqAcwXtxQ_kILTSo";
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx75tHjOemMc94up_dL5o19Qr-Lj2MfTsPVO-tyIY0lcOy_SfA2TZ7Ok0v6_dLLEJJD/exec";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzjMiUFIndgH3RVwIQjuEyQqBrwBw0peuqCIr676SdYieBAzZqmhadUXRxwl4LxMDAW/exec";
 const ALLOWED = [433916681, 325532225];
 
 // ═══════════════════════════════════════════════════
