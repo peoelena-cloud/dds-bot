@@ -15,7 +15,7 @@ const ALLOWED = [433916681, 325532225];
 // Все счета из Справочника (столбец E)
 const ACCOUNTS = [
   "Тинькоф р/с","Ключи р/с","Карта ПМЖ","Клуб ппш",
-  "Тинькоф ЛиА","Резерв","usdt",
+  "Тинькоф ЛиА","Резерв","Украинская","usdt",
   "налоги","дима клуб ппш"
 ];
 
@@ -324,16 +324,21 @@ async function showBalance(c) {
 
     let text = "💰 <b>Остатки по счетам</b>\n";
 
-    for (const group of groups) {
+    for (let gi = 0; gi < groups.length; gi++) {
+      const group = groups[gi];
       text += "\n";
+      
       for (const item of group) {
         const v = item.value.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         if (item.isTotal) {
-          text += "━━━━━━━━━━━━━━━━━━\n";
-          text += "<b>" + item.name + ": " + v + " ₽</b>\n";
+          text += "\n<b>" + item.name + ": " + v + " ₽</b>\n";
         } else {
           text += item.name + ": " + v + " ₽\n";
         }
+      }
+      
+      if (gi < groups.length - 1) {
+        text += "━━━━━━━━━━━━━━━━━━\n";
       }
     }
 
