@@ -1,9 +1,10 @@
-// tbank.js — модуль импорта операций + утренний отчёт
+// tbank.js — импорт из Т-Банк Business API + утренний отчёт
 const fetch = (...args) => import('node-fetch').then(({ default: f }) => f(...args));
 
 const TBANK_TOKEN     = process.env.TBANK_TOKEN;
 const FIXIE_URL       = process.env.FIXIE_URL;
-const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL;
+const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL
+  || "https://script.google.com/macros/s/AKfycbwaJFeL76zIgWSPvvVNeyJN9cOGaD5Tsb8-Mzg0ZIKKw-SbemBfRI4E9bYaIc9-ipZ5/exec";
 
 const ACCOUNTS = [
   { number: '40802810300001801095', name: 'Тинькоф р/с'   },
@@ -11,7 +12,7 @@ const ACCOUNTS = [
   { number: '40802810500001791264', name: 'дима клуб ппш' },
 ];
 
-// ─── Прокси-запрос через Fixie ───────────────────────────────────────────────
+// ─── Запрос через Fixie ───────────────────────────────────────────────────────
 async function tbankFetch(url) {
   const options = {
     headers: {
@@ -31,7 +32,7 @@ async function tbankFetch(url) {
   return res.json();
 }
 
-// ─── Диапазон дат ──────────────────────────────────────────────────────────
+// ─── Диапазон дат ─────────────────────────────────────────────────────────────
 function getDateRange(daysAgo = 1) {
   const d = new Date();
   d.setDate(d.getDate() - daysAgo);
@@ -41,7 +42,7 @@ function getDateRange(daysAgo = 1) {
   return { from: fmt(from), to: fmt(to), date: d };
 }
 
-// ─── Маппинг операции ──────────────────────────────────────────────────────
+// ─── Маппинг операции ─────────────────────────────────────────────────────────
 function mapOperation(op, accountName) {
   const rawAmount = op.operationAmount ?? op.amount ?? 0;
   const amount    = parseFloat(rawAmount);
@@ -50,6 +51,7 @@ function mapOperation(op, accountName) {
   const opDate    = (op.operationDate || op.date || '').slice(0, 10);
   const opId      = op.operationId || op.id || '';
 
+  // Карта ПМЖ: пропускаем Продамус (отдельный импорт)
   if (accountName === 'Карта ПМЖ') {
     if (/prodamus|продамус/i.test(desc)) return null;
   }
@@ -72,37 +74,41 @@ function mapOperation(op, accountName) {
 async function sendToSheet(row) {
   const params = new URLSearchParams({
     action: 'entry', date: row.date, account: row.account,
-    amount: row.amount, type: row.type, dds: row.dds,
-    project: row.project, comment: `[API] ${row.comment}`, opId: row.opId,
+    amount: row.amount, article: row.dds, project: row.project,
+    comment: `[API] ${row.comment}`, opId: row.opId,
   });
   const res = await fetch(`${APPS_SCRIPT_URL}?${params}`);
   return res.text();
 }
 
-// ─── Импорт операций за N дней назад ─────────────────────────────────────────
+// ─── Импорт операций ─────────────────────────────────────────────────────────
 async function importOperations(daysAgo = 1) {
   const { from, to, date } = getDateRange(daysAgo);
   const dateStr = date.toLocaleDateString('ru-RU');
-  let totalFetched = 0, totalAdded = 0, errors = [];
+  let totalAdded = 0, errors = [];
 
   for (const acc of ACCOUNTS) {
     try {
       const url  = `https://business.tinkoff.ru/openapi/api/v1/statement/${acc.number}?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
       const data = await tbankFetch(url);
       const ops  = Array.isArray(data) ? data : (data.payload || data.operations || []);
-      totalFetched += ops.length;
+      console.log(`[TBank] ${acc.name}: ${ops.length} операций`);
 
       for (const op of ops) {
         const row = mapOperation(op, acc.name);
         if (!row) continue;
-        try { await sendToSheet(row); totalAdded++; } catch (e) { errors.push(e.message); }
+        try {
+          const result = await sendToSheet(row);
+          if (result !== 'duplicate') totalAdded++;
+        } catch (e) { errors.push(e.message); }
         await new Promise(r => setTimeout(r, 200));
       }
     } catch (e) {
       errors.push(`${acc.name}: ${e.message}`);
+      console.error(`[TBank] ${acc.name}:`, e.message);
     }
   }
-  return { date: dateStr, fetched: totalFetched, added: totalAdded, errors };
+  return { date: dateStr, added: totalAdded, errors };
 }
 
 // ─── Получить отчёт из Apps Script ───────────────────────────────────────────
@@ -112,30 +118,37 @@ async function fetchReport(params) {
   return res.text();
 }
 
-// ─── Утренний авто-отчёт (вызывается из cron в server.js) ────────────────────
+// ─── Утренний авто-отчёт ─────────────────────────────────────────────────────
 async function morningReport(bot, userIds) {
   try {
-    // 1. Сначала импортируем вчерашние операции
     const imp = await importOperations(1);
 
-    // 2. Запрашиваем отчёт за вчера
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
-    const dateStr = yesterday.toISOString().slice(0, 10); // YYYY-MM-DD
-    const report  = await fetchReport({ date: dateStr });
+    const dateStr = yesterday.toISOString().slice(0, 10);
+
+    const raw    = await fetchReport({ date: dateStr });
+    const data   = JSON.parse(raw);
 
     const msg =
-      `🌅 Доброе утро! Итоги ${imp.date}\n\n` +
-      `${report}\n\n` +
+      `🌅 <b>Доброе утро! Итоги ${imp.date}</b>\n\n` +
+      `💰 Доходы: <b>${fmtMoney(data.income)} ₽</b>\n` +
+      `💸 Расходы: <b>${fmtMoney(data.expense)} ₽</b>\n` +
+      `──────────────────\n` +
+      `📈 Прибыль: <b>${fmtMoney(data.profit)} ₽</b>\n\n` +
       `📥 Загружено из банка: ${imp.added} операций` +
       (imp.errors.length ? `\n⚠️ Ошибок: ${imp.errors.length}` : '');
 
     for (const uid of userIds) {
-      await bot.sendMessage(uid, msg, { parse_mode: 'Markdown' });
+      await bot.sendMessage(uid, msg);
     }
   } catch (e) {
     console.error('[morningReport] Ошибка:', e.message);
   }
+}
+
+function fmtMoney(n) {
+  return (typeof n === 'number' ? n : 0).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 module.exports = { importOperations, fetchReport, morningReport };
