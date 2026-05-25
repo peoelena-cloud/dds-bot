@@ -1,69 +1,73 @@
 const http = require("http");
 const https = require("https");
+const cron = require('node-cron');
+const { importOperations, fetchReport, morningReport } = require('./tbank');
 
-// ═══════════════════════════════════════════════════
-// НАСТРОЙКИ — ЗАМЕНИТЕ ТОКЕН ПОСЛЕ /revoke !
-// ═══════════════════════════════════════════════════
+const USER_IDS = [433916681, 325532225]; // Елена, Аркадий
+
+// âââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ÐÐÐ¡Ð¢Ð ÐÐÐÐ â ÐÐÐÐÐÐÐ¢Ð Ð¢ÐÐÐÐ ÐÐÐ¡ÐÐ /revoke !
+// âââââââââââââââââââââââââââââââââââââââââââââââââââ
 const BOT_TOKEN = "8410628068:AAGseZ3UI7elPdJi_p7BqAcwXtxQ_kILTSo";
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzjMiUFIndgH3RVwIQjuEyQqBrwBw0peuqCIr676SdYieBAzZqmhadUXRxwl4LxMDAW/exec";
 const ALLOWED = [433916681, 325532225];
 
-// ═══════════════════════════════════════════════════
-// СПРАВОЧНИКИ
-// ═══════════════════════════════════════════════════
+// âââââââââââââââââââââââââââââââââââââââââââââââââââ
+// Ð¡ÐÐ ÐÐÐÐ§ÐÐÐÐ
+// âââââââââââââââââââââââââââââââââââââââââââââââââââ
 
-// Все счета из Справочника (столбец E)
+// ÐÑÐµ ÑÑÐµÑÐ° Ð¸Ð· Ð¡Ð¿ÑÐ°Ð²Ð¾ÑÐ½Ð¸ÐºÐ° (ÑÑÐ¾Ð»Ð±ÐµÑ E)
 const ACCOUNTS = [
-  "Тинькоф р/с","Ключи р/с","Карта ПМЖ","Клуб ппш",
-  "Тинькоф ЛиА","Резерв","usdt",
-  "налоги","дима клуб ппш"
+  "Ð¢Ð¸Ð½ÑÐºÐ¾Ñ Ñ/Ñ","ÐÐ»ÑÑÐ¸ Ñ/Ñ","ÐÐ°ÑÑÐ° ÐÐÐ","ÐÐ»ÑÐ± Ð¿Ð¿Ñ",
+  "Ð¢Ð¸Ð½ÑÐºÐ¾Ñ ÐÐ¸Ð","Ð ÐµÐ·ÐµÑÐ²","usdt",
+  "Ð½Ð°Ð»Ð¾Ð³Ð¸","Ð´Ð¸Ð¼Ð° ÐºÐ»ÑÐ± Ð¿Ð¿Ñ"
 ];
 
-// Статьи расходов (из Справочника, столбец B)
+// Ð¡ÑÐ°ÑÑÐ¸ ÑÐ°ÑÑÐ¾Ð´Ð¾Ð² (Ð¸Ð· Ð¡Ð¿ÑÐ°Ð²Ð¾ÑÐ½Ð¸ÐºÐ°, ÑÑÐ¾Ð»Ð±ÐµÑ B)
 const EXP_ARTS = [
-  "Реклама/продвижение мероприятия",
-  "Реклама и продвижение бренда (Аркадий Белецкий)",
-  "Технические (сервисы, приложения)",
-  "Зарплата сотрудники","Выплата руководителю",
-  "Выплата контрагентам","Налоги",
-  "Комиссии банков, обслуживание счета",
-  "Комиссия за переводы","Комиссия за экваиринг",
-  "Дизайн","Кураторы","Методологи",
-  "Отдел контента","Отдел продаж","Продукт",
-  "Обучение","Прочие расходы",
-  "Расходы на проведение встреч","Аренда помещения/базы",
-  "Расходники на мероприятие","Создания сайта",
-  "юридические услуги","бухгалтерское обслуживание",
-  "Интернет, мобильная связь","Транспортные расходы",
-  "Возврат займов","Займы выданные","Возврат клиентам"
+  "Ð ÐµÐºÐ»Ð°Ð¼Ð°/Ð¿ÑÐ¾Ð´Ð²Ð¸Ð¶ÐµÐ½Ð¸Ðµ Ð¼ÐµÑÐ¾Ð¿ÑÐ¸ÑÑÐ¸Ñ",
+  "Ð ÐµÐºÐ»Ð°Ð¼Ð° Ð¸ Ð¿ÑÐ¾Ð´Ð²Ð¸Ð¶ÐµÐ½Ð¸Ðµ Ð±ÑÐµÐ½Ð´Ð° (ÐÑÐºÐ°Ð´Ð¸Ð¹ ÐÐµÐ»ÐµÑÐºÐ¸Ð¹)",
+  "Ð¢ÐµÑÐ½Ð¸ÑÐµÑÐºÐ¸Ðµ (ÑÐµÑÐ²Ð¸ÑÑ, Ð¿ÑÐ¸Ð»Ð¾Ð¶ÐµÐ½Ð¸Ñ)",
+  "ÐÐ°ÑÐ¿Ð»Ð°ÑÐ° ÑÐ¾ÑÑÑÐ´Ð½Ð¸ÐºÐ¸","ÐÑÐ¿Ð»Ð°ÑÐ° ÑÑÐºÐ¾Ð²Ð¾Ð´Ð¸ÑÐµÐ»Ñ",
+  "ÐÑÐ¿Ð»Ð°ÑÐ° ÐºÐ¾Ð½ÑÑÐ°Ð³ÐµÐ½ÑÐ°Ð¼","ÐÐ°Ð»Ð¾Ð³Ð¸",
+  "ÐÐ¾Ð¼Ð¸ÑÑÐ¸Ð¸ Ð±Ð°Ð½ÐºÐ¾Ð², Ð¾Ð±ÑÐ»ÑÐ¶Ð¸Ð²Ð°Ð½Ð¸Ðµ ÑÑÐµÑÐ°",
+  "ÐÐ¾Ð¼Ð¸ÑÑÐ¸Ñ Ð·Ð° Ð¿ÐµÑÐµÐ²Ð¾Ð´Ñ","ÐÐ¾Ð¼Ð¸ÑÑÐ¸Ñ Ð·Ð° ÑÐºÐ²Ð°Ð¸ÑÐ¸Ð½Ð³",
+  "ÐÐ¸Ð·Ð°Ð¹Ð½","ÐÑÑÐ°ÑÐ¾ÑÑ","ÐÐµÑÐ¾Ð´Ð¾Ð»Ð¾Ð³Ð¸",
+  "ÐÑÐ´ÐµÐ» ÐºÐ¾Ð½ÑÐµÐ½ÑÐ°","ÐÑÐ´ÐµÐ» Ð¿ÑÐ¾Ð´Ð°Ð¶","ÐÑÐ¾Ð´ÑÐºÑ",
+  "ÐÐ±ÑÑÐµÐ½Ð¸Ðµ","ÐÑÐ¾ÑÐ¸Ðµ ÑÐ°ÑÑÐ¾Ð´Ñ",
+  "Ð Ð°ÑÑÐ¾Ð´Ñ Ð½Ð° Ð¿ÑÐ¾Ð²ÐµÐ´ÐµÐ½Ð¸Ðµ Ð²ÑÑÑÐµÑ","ÐÑÐµÐ½Ð´Ð° Ð¿Ð¾Ð¼ÐµÑÐµÐ½Ð¸Ñ/Ð±Ð°Ð·Ñ",
+  "Ð Ð°ÑÑÐ¾Ð´Ð½Ð¸ÐºÐ¸ Ð½Ð° Ð¼ÐµÑÐ¾Ð¿ÑÐ¸ÑÑÐ¸Ðµ","Ð¡Ð¾Ð·Ð´Ð°Ð½Ð¸Ñ ÑÐ°Ð¹ÑÐ°",
+  "ÑÑÐ¸Ð´Ð¸ÑÐµÑÐºÐ¸Ðµ ÑÑÐ»ÑÐ³Ð¸","Ð±ÑÑÐ³Ð°Ð»ÑÐµÑÑÐºÐ¾Ðµ Ð¾Ð±ÑÐ»ÑÐ¶Ð¸Ð²Ð°Ð½Ð¸Ðµ",
+  "ÐÐ½ÑÐµÑÐ½ÐµÑ, Ð¼Ð¾Ð±Ð¸Ð»ÑÐ½Ð°Ñ ÑÐ²ÑÐ·Ñ","Ð¢ÑÐ°Ð½ÑÐ¿Ð¾ÑÑÐ½ÑÐµ ÑÐ°ÑÑÐ¾Ð´Ñ",
+  "ÐÐ¾Ð·Ð²ÑÐ°Ñ Ð·Ð°Ð¹Ð¼Ð¾Ð²","ÐÐ°Ð¹Ð¼Ñ Ð²ÑÐ´Ð°Ð½Ð½ÑÐµ","ÐÐ¾Ð·Ð²ÑÐ°Ñ ÐºÐ»Ð¸ÐµÐ½ÑÐ°Ð¼"
 ];
 
-// Статьи поступлений
+// Ð¡ÑÐ°ÑÑÐ¸ Ð¿Ð¾ÑÑÑÐ¿Ð»ÐµÐ½Ð¸Ð¹
 const INC_ARTS = [
-  "Поступления от клиентов",
-  "Поступления от контрагентов",
-  "Займы полученные"
+  "ÐÐ¾ÑÑÑÐ¿Ð»ÐµÐ½Ð¸Ñ Ð¾Ñ ÐºÐ»Ð¸ÐµÐ½ÑÐ¾Ð²",
+  "ÐÐ¾ÑÑÑÐ¿Ð»ÐµÐ½Ð¸Ñ Ð¾Ñ ÐºÐ¾Ð½ÑÑÐ°Ð³ÐµÐ½ÑÐ¾Ð²",
+  "ÐÐ°Ð¹Ð¼Ñ Ð¿Ð¾Ð»ÑÑÐµÐ½Ð½ÑÐµ"
 ];
 
-// Проекты (из Справочника, столбец G)
+// ÐÑÐ¾ÐµÐºÑÑ (Ð¸Ð· Ð¡Ð¿ÑÐ°Ð²Ð¾ÑÐ½Ð¸ÐºÐ°, ÑÑÐ¾Ð»Ð±ÐµÑ G)
 const PROJECTS = [
-  "Клуб Перепрошитых",'Клуб "Моя жинь"',"Ключи изобилия 2026",
-  "Проект Моя Жизнь","Клуб х2х10","проект Аркадий Белецкий",
-  "Клуб гениальных экспертов","лена финансист",
-  "Курс ключи изобилия",
-  "Курс Академия Гениальных Экслертов 1 поток",
-  "Курс эмоциональный мастер"
+  "ÐÐ»ÑÐ± ÐÐµÑÐµÐ¿ÑÐ¾ÑÐ¸ÑÑÑ",'ÐÐ»ÑÐ± "ÐÐ¾Ñ Ð¶Ð¸Ð½Ñ"',"ÐÐ»ÑÑÐ¸ Ð¸Ð·Ð¾Ð±Ð¸Ð»Ð¸Ñ 2026",
+  "ÐÑÐ¾ÐµÐºÑ ÐÐ¾Ñ ÐÐ¸Ð·Ð½Ñ","ÐÐ»ÑÐ± Ñ2Ñ10","Ð¿ÑÐ¾ÐµÐºÑ ÐÑÐºÐ°Ð´Ð¸Ð¹ ÐÐµÐ»ÐµÑÐºÐ¸Ð¹",
+  "ÐÐ»ÑÐ± Ð³ÐµÐ½Ð¸Ð°Ð»ÑÐ½ÑÑ ÑÐºÑÐ¿ÐµÑÑÐ¾Ð²","Ð»ÐµÐ½Ð° ÑÐ¸Ð½Ð°Ð½ÑÐ¸ÑÑ",
+  "ÐÑÑÑ ÐºÐ»ÑÑÐ¸ Ð¸Ð·Ð¾Ð±Ð¸Ð»Ð¸Ñ",
+  "ÐÑÑÑ ÐÐºÐ°Ð´ÐµÐ¼Ð¸Ñ ÐÐµÐ½Ð¸Ð°Ð»ÑÐ½ÑÑ Ð­ÐºÑÐ»ÐµÑÑÐ¾Ð² 1 Ð¿Ð¾ÑÐ¾Ðº",
+  "ÐÑÑÑ ÑÐ¼Ð¾ÑÐ¸Ð¾Ð½Ð°Ð»ÑÐ½ÑÐ¹ Ð¼Ð°ÑÑÐµÑ"
 ];
 
-const MONTHS_RU = ["","Январь","Февраль","Март","Апрель","Май","Июнь",
-  "Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"];
+const MONTHS_RU = ["","Ð¯Ð½Ð²Ð°ÑÑ","Ð¤ÐµÐ²ÑÐ°Ð»Ñ","ÐÐ°ÑÑ","ÐÐ¿ÑÐµÐ»Ñ","ÐÐ°Ð¹","ÐÑÐ½Ñ",
+  "ÐÑÐ»Ñ","ÐÐ²Ð³ÑÑÑ","Ð¡ÐµÐ½ÑÑÐ±ÑÑ","ÐÐºÑÑÐ±ÑÑ","ÐÐ¾ÑÐ±ÑÑ","ÐÐµÐºÐ°Ð±ÑÑ"];
 
-// ═══════════════════════════════════════════════════
+// âââââââââââââââââââââââââââââââââââââââââââââââââââ
 const states = {};
 
-// ═══════════════════════════════════════════════════
+// âââââââââââââââââââââââââââââââââââââââââââââââââââ
 // TELEGRAM API
-// ═══════════════════════════════════════════════════
+// âââââââââââââââââââââââââââââââââââââââââââââââââââ
 function tg(method, data) {
   return new Promise((resolve, reject) => {
     const body = JSON.stringify(data);
@@ -83,9 +87,9 @@ function send(c, t, kb) {
 }
 function answer(id) { return tg("answerCallbackQuery", { callback_query_id: id }); }
 
-// ═══════════════════════════════════════════════════
+// âââââââââââââââââââââââââââââââââââââââââââââââââââ
 // APPS SCRIPT
-// ═══════════════════════════════════════════════════
+// âââââââââââââââââââââââââââââââââââââââââââââââââââ
 function callAPI(params) {
   return new Promise((resolve, reject) => {
     const qs = new URLSearchParams(params).toString();
@@ -103,36 +107,49 @@ function callAPI(params) {
   });
 }
 
-// ═══════════════════════════════════════════════════
-// ОБРАБОТКА ОБНОВЛЕНИЙ
-// ═══════════════════════════════════════════════════
+// âââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ÐÐÐ ÐÐÐÐ¢ÐÐ ÐÐÐÐÐÐÐÐÐÐ
+// âââââââââââââââââââââââââââââââââââââââââââââââââââ
 async function handleUpdate(update) {
   try {
     if (update.callback_query) {
       const c = update.callback_query.message.chat.id;
       answer(update.callback_query.id);
       if (!ALLOWED.includes(c)) return;
+    // ── Обработчик выбора года ──
+    const _yd = update.callback_query.data;
+    if (_yd && _yd.startsWith('year_')) {
+      const _year = _yd.replace('year_', '');
+      await send(c, `⏳ Загружаю отчёт за ${_year}...`);
+      try {
+        const _report = await fetchReport({ year: _year });
+        await send(c, `📊 Отчёт за ${_year} год\n\n${_report}`);
+      } catch (e) {
+        await send(c, `❌ Ошибка: ${e.message}`);
+      }
+      return;
+    }
       await handleBtn(c, update.callback_query.data);
     } else if (update.message) {
       const c = update.message.chat.id;
       const t = (update.message.text || "").trim();
-      if (!ALLOWED.includes(c)) { await send(c, "⛔ ID: " + c); return; }
+      if (!ALLOWED.includes(c)) { await send(c, "â ID: " + c); return; }
       await handleText(c, t);
     }
   } catch (e) { console.log("Error:", e.message); }
 }
 
-// ═══════════════════════════════════════════════════
-// ТЕКСТОВЫЕ СООБЩЕНИЯ
-// ═══════════════════════════════════════════════════
+// âââââââââââââââââââââââââââââââââââââââââââââââââââ
+// Ð¢ÐÐÐ¡Ð¢ÐÐÐ«Ð Ð¡ÐÐÐÐ©ÐÐÐÐ¯
+// âââââââââââââââââââââââââââââââââââââââââââââââââââ
 async function handleText(c, t) {
   if (t === "/start" || t === "/menu") { delete states[c]; await mainMenu(c); return; }
-  if (t === "/cancel") { delete states[c]; await send(c, "❌ Отменено."); await mainMenu(c); return; }
+  if (t === "/cancel") { delete states[c]; await send(c, "â ÐÑÐ¼ÐµÐ½ÐµÐ½Ð¾."); await mainMenu(c); return; }
 
   const st = states[c];
   if (!st) { await mainMenu(c); return; }
 
-  // Ввод даты
+  // ÐÐ²Ð¾Ð´ Ð´Ð°ÑÑ
   if (st.waitDate) {
     const parts = t.split(".");
     if (parts.length >= 2) {
@@ -147,11 +164,11 @@ async function handleText(c, t) {
         return;
       }
     }
-    await send(c, "❌ Формат: ДД.ММ.ГГГГ\nНапример: 15.04.2026");
+    await send(c, "â Ð¤Ð¾ÑÐ¼Ð°Ñ: ÐÐ.ÐÐ.ÐÐÐÐ\nÐÐ°Ð¿ÑÐ¸Ð¼ÐµÑ: 15.04.2026");
     return;
   }
 
-  // Комментарий
+  // ÐÐ¾Ð¼Ð¼ÐµÐ½ÑÐ°ÑÐ¸Ð¹
   if (st.waitComment) {
     st.comment = t === "/skip" ? "" : t;
     st.waitComment = false;
@@ -159,10 +176,10 @@ async function handleText(c, t) {
     return;
   }
 
-  // Сумма
+  // Ð¡ÑÐ¼Ð¼Ð°
   if (st.waitAmount) {
     const n = parseFloat(t.replace(",",".").replace(/\s/g,""));
-    if (isNaN(n) || n <= 0) { await send(c, "❌ Число больше 0"); return; }
+    if (isNaN(n) || n <= 0) { await send(c, "â Ð§Ð¸ÑÐ»Ð¾ Ð±Ð¾Ð»ÑÑÐµ 0"); return; }
     st.amount = n;
     st.waitAmount = false;
     states[c] = st;
@@ -170,7 +187,7 @@ async function handleText(c, t) {
     return;
   }
 
-  // Дата/месяц для отчёта
+  // ÐÐ°ÑÐ°/Ð¼ÐµÑÑÑ Ð´Ð»Ñ Ð¾ÑÑÑÑÐ°
   if (st.waitReportInput) {
     st.waitReportInput = false;
     const parts = t.split(".");
@@ -179,7 +196,7 @@ async function handleText(c, t) {
     } else if (parts.length === 2) {
       await showReport(c, { month: parts[1]+"-"+parts[0].padStart(2,"0") });
     } else {
-      await send(c, "❌ Формат: ДД.ММ.ГГГГ или ММ.ГГГГ");
+      await send(c, "â Ð¤Ð¾ÑÐ¼Ð°Ñ: ÐÐ.ÐÐ.ÐÐÐÐ Ð¸Ð»Ð¸ ÐÐ.ÐÐÐÐ");
     }
     return;
   }
@@ -187,21 +204,44 @@ async function handleText(c, t) {
   await mainMenu(c);
 }
 
-// ═══════════════════════════════════════════════════
-// КНОПКИ
-// ═══════════════════════════════════════════════════
+// âââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ÐÐÐÐÐÐ
+// âââââââââââââââââââââââââââââââââââââââââââââââââââ
 async function handleBtn(c, d) {
   const st = states[c] || {};
 
-  // Главное меню
-  if (d === "EXP") { states[c] = { type: "expense" }; await accMenu(c, "💸 <b>Расход</b>\nВыберите счёт:"); return; }
-  if (d === "INC") { states[c] = { type: "income" }; await accMenu(c, "💰 <b>Поступление</b>\nВыберите счёт:"); return; }
-  if (d === "TRN") { states[c] = { type: "transfer" }; await accMenu(c, "🔄 <b>Перевод</b>\nОткуда:"); return; }
+  // ÐÐ»Ð°Ð²Ð½Ð¾Ðµ Ð¼ÐµÐ½Ñ
+  if (d === "EXP") { states[c] = { type: "expense" }; await accMenu(c, "ð¸ <b>Ð Ð°ÑÑÐ¾Ð´</b>\nÐÑÐ±ÐµÑÐ¸ÑÐµ ÑÑÑÑ:"); return; }
+  if (d === "INC") { states[c] = { type: "income" }; await accMenu(c, "ð° <b>ÐÐ¾ÑÑÑÐ¿Ð»ÐµÐ½Ð¸Ðµ</b>\nÐÑÐ±ÐµÑÐ¸ÑÐµ ÑÑÑÑ:"); return; }
+  if (d === "TRN") { states[c] = { type: "transfer" }; await accMenu(c, "ð <b>ÐÐµÑÐµÐ²Ð¾Ð´</b>\nÐÑÐºÑÐ´Ð°:"); return; }
   if (d === "BAL") { await showBalance(c); return; }
   if (d === "REP") { await reportMenu(c); return; }
+
+  // ── Кнопка «📥 Импорт из банка» ──
+  if (d === "IMP") {
+    await send(c, "⏳ Загружаю операции из Т-Банка...");
+    try {
+      const result = await importOperations(1);
+      let msg = `✅ Импорт завершён!\n\nДата: ${result.date}\nЗагружено: ${result.added} операций`;
+      if (result.errors.length) msg += `\n⚠️ Ошибки (${result.errors.length}):\n${result.errors.slice(0,3).join('\n')}`;
+      await send(c, msg);
+    } catch (e) {
+      await send(c, `❌ Ошибка импорта: ${e.message}`);
+    }
+  }
+
+  // ── Кнопка «📊 Отчёт за год» ──
+  if (d === "YEAR") {
+    const cy = new Date().getFullYear();
+    await send(c, "📅 Выбери год:", {inline_keyboard: [
+      [{text: String(cy),   callback_data: `year_${cy}`},
+       {text: String(cy-1), callback_data: `year_${cy-1}`},
+       {text: String(cy-2), callback_data: `year_${cy-2}`}]
+    ]});
+  }
   if (d === "MENU") { delete states[c]; await mainMenu(c); return; }
 
-  // Счёт
+  // Ð¡ÑÑÑ
   if (d.startsWith("A.")) {
     const idx = parseInt(d.split(".")[1]);
     const acc = ACCOUNTS[idx];
@@ -209,33 +249,33 @@ async function handleBtn(c, d) {
     if (st.type === "transfer" && !st.fromAcc) {
       st.fromAcc = acc;
       states[c] = st;
-      await accMenu(c, "🔄 Из: <b>" + acc + "</b>\nКуда:");
+      await accMenu(c, "ð ÐÐ·: <b>" + acc + "</b>\nÐÑÐ´Ð°:");
       return;
     }
     if (st.type === "transfer" && st.fromAcc) {
-      if (acc === st.fromAcc) { await send(c, "❌ Тот же счёт!"); return; }
+      if (acc === st.fromAcc) { await send(c, "â Ð¢Ð¾Ñ Ð¶Ðµ ÑÑÑÑ!"); return; }
       st.toAcc = acc;
       st.waitAmount = true;
       states[c] = st;
-      await send(c, "🔄 " + st.fromAcc + " → " + st.toAcc + "\n\n💵 Введите сумму:");
+      await send(c, "ð " + st.fromAcc + " â " + st.toAcc + "\n\nðµ ÐÐ²ÐµÐ´Ð¸ÑÐµ ÑÑÐ¼Ð¼Ñ:");
       return;
     }
 
     st.account = acc;
     st.waitAmount = true;
     states[c] = st;
-    await send(c, "💳 <b>" + acc + "</b>\n\n💵 Введите сумму:");
+    await send(c, "ð³ <b>" + acc + "</b>\n\nðµ ÐÐ²ÐµÐ´Ð¸ÑÐµ ÑÑÐ¼Ð¼Ñ:");
     return;
   }
 
-  // Дата
+  // ÐÐ°ÑÐ°
   if (d === "D.today") { st.date = fmtD(new Date()); states[c] = st; await afterDate(c, st); return; }
   if (d === "D.yest") { const y = new Date(); y.setDate(y.getDate()-1); st.date = fmtD(y); states[c] = st; await afterDate(c, st); return; }
   if (d === "D.2") { const y = new Date(); y.setDate(y.getDate()-2); st.date = fmtD(y); states[c] = st; await afterDate(c, st); return; }
   if (d === "D.3") { const y = new Date(); y.setDate(y.getDate()-3); st.date = fmtD(y); states[c] = st; await afterDate(c, st); return; }
-  if (d === "D.other") { st.waitDate = true; states[c] = st; await send(c, "📅 Введите дату:\nФормат: ДД.ММ.ГГГГ"); return; }
+  if (d === "D.other") { st.waitDate = true; states[c] = st; await send(c, "ð ÐÐ²ÐµÐ´Ð¸ÑÐµ Ð´Ð°ÑÑ:\nÐ¤Ð¾ÑÐ¼Ð°Ñ: ÐÐ.ÐÐ.ÐÐÐÐ"); return; }
 
-  // Статья
+  // Ð¡ÑÐ°ÑÑÑ
   if (d.startsWith("R.")) {
     const arts = st.type === "expense" ? EXP_ARTS : INC_ARTS;
     st.article = arts[parseInt(d.split(".")[1])];
@@ -244,20 +284,20 @@ async function handleBtn(c, d) {
     return;
   }
 
-  // Проект
+  // ÐÑÐ¾ÐµÐºÑ
   if (d.startsWith("P.")) {
     st.project = d === "P._" ? "" : PROJECTS[parseInt(d.split(".")[1])];
     st.waitComment = true;
     states[c] = st;
-    await send(c, "💬 Комментарий?\n\nНапишите текст или /skip");
+    await send(c, "ð¬ ÐÐ¾Ð¼Ð¼ÐµÐ½ÑÐ°ÑÐ¸Ð¹?\n\nÐÐ°Ð¿Ð¸ÑÐ¸ÑÐµ ÑÐµÐºÑÑ Ð¸Ð»Ð¸ /skip");
     return;
   }
 
-  // Отчёт: месяц
+  // ÐÑÑÑÑ: Ð¼ÐµÑÑÑ
   if (d.startsWith("RM.")) {
     if (d === "RM.custom") {
       states[c] = { waitReportInput: true };
-      await send(c, "📅 Введите:\n\nДата: ДД.ММ.ГГГГ\nМесяц: ММ.ГГГГ");
+      await send(c, "ð ÐÐ²ÐµÐ´Ð¸ÑÐµ:\n\nÐÐ°ÑÐ°: ÐÐ.ÐÐ.ÐÐÐÐ\nÐÐµÑÑÑ: ÐÐ.ÐÐÐÐ");
       return;
     }
     const m = parseInt(d.split(".")[1]);
@@ -267,62 +307,62 @@ async function handleBtn(c, d) {
   }
 }
 
-// ═══════════════════════════════════════════════════
-// ПОСЛЕ ДАТЫ → статьи или комментарий
-// ═══════════════════════════════════════════════════
+// âââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ÐÐÐ¡ÐÐ ÐÐÐ¢Ð« â ÑÑÐ°ÑÑÐ¸ Ð¸Ð»Ð¸ ÐºÐ¾Ð¼Ð¼ÐµÐ½ÑÐ°ÑÐ¸Ð¹
+// âââââââââââââââââââââââââââââââââââââââââââââââââââ
 async function afterDate(c, st) {
   if (st.type === "transfer") {
     st.waitComment = true;
     states[c] = st;
-    await send(c, "💬 Комментарий? (/skip)");
+    await send(c, "ð¬ ÐÐ¾Ð¼Ð¼ÐµÐ½ÑÐ°ÑÐ¸Ð¹? (/skip)");
   } else {
     await articleMenu(c, st.type);
   }
 }
 
-// ═══════════════════════════════════════════════════
-// ЗАПИСЬ В ТАБЛИЦУ
-// ═══════════════════════════════════════════════════
+// âââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ÐÐÐÐÐ¡Ð¬ Ð Ð¢ÐÐÐÐÐ¦Ð£
+// âââââââââââââââââââââââââââââââââââââââââââââââââââ
 async function finishEntry(c, st) {
-  await send(c, "⏳ Записываю...");
+  await send(c, "â³ ÐÐ°Ð¿Ð¸ÑÑÐ²Ð°Ñ...");
   try {
     if (st.type === "transfer") {
       await callAPI({
         action: "transfer", from: st.fromAcc, to: st.toAcc,
         amount: st.amount, date: st.date, comment: st.comment || ""
       });
-      await send(c, "✅ <b>Перевод записан!</b>\n\n🔄 " + st.fromAcc + " → " + st.toAcc +
-        "\n💵 " + st.amount + "₽\n📅 " + fmtDRu(st.date) +
-        (st.comment ? "\n💬 " + st.comment : ""));
+      await send(c, "â <b>ÐÐµÑÐµÐ²Ð¾Ð´ Ð·Ð°Ð¿Ð¸ÑÐ°Ð½!</b>\n\nð " + st.fromAcc + " â " + st.toAcc +
+        "\nðµ " + st.amount + "â½\nð " + fmtDRu(st.date) +
+        (st.comment ? "\nð¬ " + st.comment : ""));
     } else {
       await callAPI({
         action: "entry", account: st.account, amount: st.amount,
         article: st.article, project: st.project || "",
         date: st.date, comment: st.comment || ""
       });
-      const emoji = st.type === "expense" ? "💸" : "💰";
-      await send(c, "✅ <b>Записано!</b>\n\n" + emoji + " " + st.amount + "₽" +
-        "\n📋 " + st.article +
-        "\n📁 " + (st.project || "—") +
-        "\n💳 " + st.account +
-        "\n📅 " + fmtDRu(st.date) +
-        (st.comment ? "\n💬 " + st.comment : ""));
+      const emoji = st.type === "expense" ? "ð¸" : "ð°";
+      await send(c, "â <b>ÐÐ°Ð¿Ð¸ÑÐ°Ð½Ð¾!</b>\n\n" + emoji + " " + st.amount + "â½" +
+        "\nð " + st.article +
+        "\nð " + (st.project || "â") +
+        "\nð³ " + st.account +
+        "\nð " + fmtDRu(st.date) +
+        (st.comment ? "\nð¬ " + st.comment : ""));
     }
-  } catch (e) { await send(c, "❌ Ошибка: " + e.message); }
+  } catch (e) { await send(c, "â ÐÑÐ¸Ð±ÐºÐ°: " + e.message); }
   delete states[c];
   await mainMenu(c);
 }
 
-// ═══════════════════════════════════════════════════
-// БАЛАНС
-// ═══════════════════════════════════════════════════
+// âââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ÐÐÐÐÐÐ¡
+// âââââââââââââââââââââââââââââââââââââââââââââââââââ
 async function showBalance(c) {
-  await send(c, "⏳ Загружаю...");
+  await send(c, "â³ ÐÐ°Ð³ÑÑÐ¶Ð°Ñ...");
   try {
     const raw = await callAPI({ action: "balance" });
     const groups = JSON.parse(raw);
 
-    let text = "💰 <b>Остатки по счетам</b>\n";
+    let text = "ð° <b>ÐÑÑÐ°ÑÐºÐ¸ Ð¿Ð¾ ÑÑÐµÑÐ°Ð¼</b>\n";
 
     for (let gi = 0; gi < groups.length; gi++) {
       const group = groups[gi];
@@ -331,26 +371,26 @@ async function showBalance(c) {
       for (const item of group) {
         const v = item.value.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         if (item.isTotal) {
-          text += "\n<b>" + item.name + ": " + v + " ₽</b>\n";
+          text += "\n<b>" + item.name + ": " + v + " â½</b>\n";
         } else {
-          text += item.name + ": " + v + " ₽\n";
+          text += item.name + ": " + v + " â½\n";
         }
       }
       
       if (gi < groups.length - 1) {
-        text += "━━━━━━━━━━━━━━━━━━\n";
+        text += "ââââââââââââââââââ\n";
       }
     }
 
-    await send(c, text, { inline_keyboard: [[{ text: "◀️ Меню", callback_data: "MENU" }]] });
-  } catch (e) { await send(c, "❌ Ошибка: " + e.message); }
+    await send(c, text, { inline_keyboard: [[{ text: "âï¸ ÐÐµÐ½Ñ", callback_data: "MENU" }]] });
+  } catch (e) { await send(c, "â ÐÑÐ¸Ð±ÐºÐ°: " + e.message); }
 }
 
-// ═══════════════════════════════════════════════════
-// ОТЧЁТ
-// ═══════════════════════════════════════════════════
+// âââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ÐÐ¢Ð§ÐÐ¢
+// âââââââââââââââââââââââââââââââââââââââââââââââââââ
 async function showReport(c, params) {
-  await send(c, "⏳ Считаю...");
+  await send(c, "â³ Ð¡ÑÐ¸ÑÐ°Ñ...");
   try {
     const raw = await callAPI({ action: "report", ...params });
     const data = JSON.parse(raw);
@@ -358,38 +398,39 @@ async function showReport(c, params) {
       ? fmtDRu(params.date)
       : MONTHS_RU[parseInt(params.month.split("-")[1])] + " " + params.month.split("-")[0];
 
-    let text = "📊 <b>Отчёт: " + period + "</b>\n\n";
-    text += "💰 Доходы: <b>" + fmt(data.income) + " ₽</b>\n";
-    text += "💸 Расходы: <b>" + fmt(data.expense) + " ₽</b>\n";
-    text += "━━━━━━━━━━━━━━━━━━\n";
-    text += "📈 Прибыль: <b>" + fmt(data.profit) + " ₽</b>\n";
+    let text = "ð <b>ÐÑÑÑÑ: " + period + "</b>\n\n";
+    text += "ð° ÐÐ¾ÑÐ¾Ð´Ñ: <b>" + fmt(data.income) + " â½</b>\n";
+    text += "ð¸ Ð Ð°ÑÑÐ¾Ð´Ñ: <b>" + fmt(data.expense) + " â½</b>\n";
+    text += "ââââââââââââââââââ\n";
+    text += "ð ÐÑÐ¸Ð±ÑÐ»Ñ: <b>" + fmt(data.profit) + " â½</b>\n";
 
     if (data.detailsIncome && Object.keys(data.detailsIncome).length > 0) {
-      text += "\n💰 <b>Доходы по статьям:</b>\n";
+      text += "\nð° <b>ÐÐ¾ÑÐ¾Ð´Ñ Ð¿Ð¾ ÑÑÐ°ÑÑÑÐ¼:</b>\n";
       for (const [art, sum] of Object.entries(data.detailsIncome).sort((a,b) => b[1]-a[1])) {
         text += "  " + art.substring(0,30) + ": " + fmt(sum) + "\n";
       }
     }
 
     if (data.detailsExpense && Object.keys(data.detailsExpense).length > 0) {
-      text += "\n💸 <b>Расходы по статьям:</b>\n";
+      text += "\nð¸ <b>Ð Ð°ÑÑÐ¾Ð´Ñ Ð¿Ð¾ ÑÑÐ°ÑÑÑÐ¼:</b>\n";
       for (const [art, sum] of Object.entries(data.detailsExpense).sort((a,b) => b[1]-a[1]).slice(0,15)) {
         text += "  " + art.substring(0,30) + ": " + fmt(sum) + "\n";
       }
     }
 
-    await send(c, text, { inline_keyboard: [[{ text: "◀️ Меню", callback_data: "MENU" }]] });
-  } catch (e) { await send(c, "❌ Ошибка: " + e.message); }
+    await send(c, text, { inline_keyboard: [[{ text: "âï¸ ÐÐµÐ½Ñ", callback_data: "MENU" }]] });
+  } catch (e) { await send(c, "â ÐÑÐ¸Ð±ÐºÐ°: " + e.message); }
 }
 
-// ═══════════════════════════════════════════════════
-// МЕНЮ
-// ═══════════════════════════════════════════════════
+// âââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ÐÐÐÐ®
+// âââââââââââââââââââââââââââââââââââââââââââââââââââ
 async function mainMenu(c) {
-  await send(c, "📊 <b>Что сделать?</b>", { inline_keyboard: [
-    [{ text: "💸 Расход", callback_data: "EXP" }, { text: "💰 Поступление", callback_data: "INC" }],
-    [{ text: "🔄 Перевод", callback_data: "TRN" }],
-    [{ text: "💰 Баланс", callback_data: "BAL" }, { text: "📊 Отчёт", callback_data: "REP" }]
+  await send(c, "ð <b>Ð§ÑÐ¾ ÑÐ´ÐµÐ»Ð°ÑÑ?</b>", { inline_keyboard: [
+    [{ text: "ð¸ Ð Ð°ÑÑÐ¾Ð´", callback_data: "EXP" }, { text: "ð° ÐÐ¾ÑÑÑÐ¿Ð»ÐµÐ½Ð¸Ðµ", callback_data: "INC" }],
+    [{ text: "ð ÐÐµÑÐµÐ²Ð¾Ð´", callback_data: "TRN" }],
+    [{ text: "ð° ÐÐ°Ð»Ð°Ð½Ñ", callback_data: "BAL" }, { text: "ð ÐÑÑÑÑ", callback_data: "REP" }],
+    [{text: "📊 Отчёт за год", callback_data: "YEAR"}, {text: "📥 Импорт из банка", callback_data: "IMP"}]
   ]});
 }
 
@@ -408,11 +449,11 @@ async function dateMenu(c) {
   const d1 = new Date(); d1.setDate(d1.getDate()-1);
   const d2 = new Date(); d2.setDate(d2.getDate()-2);
   const d3 = new Date(); d3.setDate(d3.getDate()-3);
-  await send(c, "📅 <b>Дата операции:</b>", { inline_keyboard: [
-    [{ text: "Сегодня " + fmtDRu(fmtD(today)), callback_data: "D.today" }],
-    [{ text: "Вчера " + fmtDRu(fmtD(d1)), callback_data: "D.yest" }],
+  await send(c, "ð <b>ÐÐ°ÑÐ° Ð¾Ð¿ÐµÑÐ°ÑÐ¸Ð¸:</b>", { inline_keyboard: [
+    [{ text: "Ð¡ÐµÐ³Ð¾Ð´Ð½Ñ " + fmtDRu(fmtD(today)), callback_data: "D.today" }],
+    [{ text: "ÐÑÐµÑÐ° " + fmtDRu(fmtD(d1)), callback_data: "D.yest" }],
     [{ text: fmtDRu(fmtD(d2)), callback_data: "D.2" }, { text: fmtDRu(fmtD(d3)), callback_data: "D.3" }],
-    [{ text: "📅 Другая дата...", callback_data: "D.other" }]
+    [{ text: "ð ÐÑÑÐ³Ð°Ñ Ð´Ð°ÑÐ°...", callback_data: "D.other" }]
   ]});
 }
 
@@ -423,7 +464,7 @@ async function articleMenu(c, type) {
     const nm = a[i].length > 28 ? a[i].substring(0,26)+".." : a[i];
     btns.push([{ text: nm, callback_data: "R."+i }]);
   }
-  await send(c, "📋 <b>Статья:</b>", { inline_keyboard: btns });
+  await send(c, "ð <b>Ð¡ÑÐ°ÑÑÑ:</b>", { inline_keyboard: btns });
 }
 
 async function projectMenu(c) {
@@ -433,8 +474,8 @@ async function projectMenu(c) {
     if (i+1 < PROJECTS.length) row.push({ text: PROJECTS[i+1].substring(0,22), callback_data: "P."+(i+1) });
     btns.push(row);
   }
-  btns.push([{ text: "— Без проекта —", callback_data: "P._" }]);
-  await send(c, "📁 <b>Проект:</b>", { inline_keyboard: btns });
+  btns.push([{ text: "â ÐÐµÐ· Ð¿ÑÐ¾ÐµÐºÑÐ° â", callback_data: "P._" }]);
+  await send(c, "ð <b>ÐÑÐ¾ÐµÐºÑ:</b>", { inline_keyboard: btns });
 }
 
 async function reportMenu(c) {
@@ -446,22 +487,39 @@ async function reportMenu(c) {
     if (month <= 0) month += 12;
     btns.push([{ text: MONTHS_RU[month], callback_data: "RM." + month }]);
   }
-  btns.push([{ text: "📅 Другая дата/месяц...", callback_data: "RM.custom" }]);
-  btns.push([{ text: "◀️ Меню", callback_data: "MENU" }]);
-  await send(c, "📊 <b>За какой период?</b>", { inline_keyboard: btns });
+  btns.push([{ text: "ð ÐÑÑÐ³Ð°Ñ Ð´Ð°ÑÐ°/Ð¼ÐµÑÑÑ...", callback_data: "RM.custom" }]);
+  btns.push([{ text: "âï¸ ÐÐµÐ½Ñ", callback_data: "MENU" }]);
+  await send(c, "ð <b>ÐÐ° ÐºÐ°ÐºÐ¾Ð¹ Ð¿ÐµÑÐ¸Ð¾Ð´?</b>", { inline_keyboard: btns });
 }
 
-// ═══════════════════════════════════════════════════
-// УТИЛИТЫ
-// ═══════════════════════════════════════════════════
+// âââââââââââââââââââââââââââââââââââââââââââââââââââ
+// Ð£Ð¢ÐÐÐÐ¢Ð«
+// âââââââââââââââââââââââââââââââââââââââââââââââââââ
 function fmtD(d) { return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
-function fmtDRu(s) { if(!s) return "—"; const p=s.split("-"); return p[2]+"."+p[1]+"."+p[0]; }
+function fmtDRu(s) { if(!s) return "â"; const p=s.split("-"); return p[2]+"."+p[1]+"."+p[0]; }
 function fmt(n) { return (typeof n === "number" ? n : 0).toLocaleString("ru-RU",{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
-// ═══════════════════════════════════════════════════
-// HTTP СЕРВЕР
-// ═══════════════════════════════════════════════════
+// âââââââââââââââââââââââââââââââââââââââââââââââââââ
+// HTTP Ð¡ÐÐ ÐÐÐ 
+// âââââââââââââââââââââââââââââââââââââââââââââââââââ
 const PORT = process.env.PORT || 3000;
+// ═══════════════════════════════════════════════════
+// CRON-ЗАДАЧИ
+// ═══════════════════════════════════════════════════
+
+// Импорт из банка каждую ночь в 03:00 мск
+cron.schedule('0 0 3 * * *', async () => {
+  console.log('[CRON] Ночной импорт из Т-Банка...');
+  const result = await importOperations(1);
+  console.log(`[CRON] Готово: ${result.added} строк добавлено`);
+}, { timezone: 'Europe/Moscow' });
+
+// Утренний отчёт каждый день в 09:00 мск
+cron.schedule('0 0 9 * * *', async () => {
+  console.log('[CRON] Утренний отчёт...');
+  await morningReport({ sendMessage: (uid, msg) => send(uid, msg) }, USER_IDS);
+}, { timezone: 'Europe/Moscow' });
+
 http.createServer(async (req, res) => {
   if (req.method === "POST") {
     let body = "";
