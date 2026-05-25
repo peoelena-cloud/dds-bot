@@ -149,6 +149,14 @@ async function handleText(c, t) {
   const st = states[c];
   if (!st) { await mainMenu(c); return; }
 
+  if (st.waitImportDays) {
+    const days = parseInt(t);
+    if (isNaN(days) || days < 1 || days > 365) { await send(c, "❌ Введите число от 1 до 365"); return; }
+    delete states[c];
+    await runImport(c, days);
+    return;
+  }
+
   if (st.waitDate) {
     const parts = t.split(".");
     if (parts.length >= 2) {
@@ -204,17 +212,27 @@ async function handleBtn(c, d) {
   if (d === "REP") { await reportMenu(c); return; }
   if (d === "MENU") { delete states[c]; await mainMenu(c); return; }
 
-  // Импорт из банка
+  // Импорт из банка — выбор периода
   if (d === "IMP") {
-    await send(c, "⏳ Загружаю операции из Т-Банка...");
-    try {
-      const result = await importOperations(1);
-      let msg = `✅ Импорт завершён!\n\nДата: ${result.date}\nЗагружено: ${result.added} операций`;
-      if (result.errors.length) msg += `\n⚠️ Ошибки (${result.errors.length}):\n${result.errors.slice(0,3).join('\n')}`;
-      await send(c, msg);
-    } catch (e) {
-      await send(c, `❌ Ошибка импорта: ${e.message}`);
+    await send(c, "📥 <b>Импорт из Т-Банка</b>\nЗа какой период загрузить?", { inline_keyboard: [
+      [{ text: "Вчера",          callback_data: "IMP.1"   }],
+      [{ text: "3 дня",          callback_data: "IMP.3"   }],
+      [{ text: "7 дней",         callback_data: "IMP.7"   }],
+      [{ text: "30 дней",        callback_data: "IMP.30"  }],
+      [{ text: "📅 Другой период...", callback_data: "IMP.custom" }],
+    ]});
+    return;
+  }
+
+  // Импорт — выбран конкретный период
+  if (d.startsWith("IMP.")) {
+    if (d === "IMP.custom") {
+      states[c] = { waitImportDays: true };
+      await send(c, "📅 Введите количество дней назад:\nНапример: <b>14</b> — загрузит за последние 2 недели");
+      return;
     }
+    const days = parseInt(d.split(".")[1]);
+    await runImport(c, days);
     return;
   }
 
@@ -452,6 +470,29 @@ async function reportMenu(c) {
 function fmtD(d) { return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
 function fmtDRu(s) { if(!s) return "—"; const p=s.split("-"); return p[2]+"."+p[1]+"."+p[0]; }
 function fmt(n) { return (typeof n === "number" ? n : 0).toLocaleString("ru-RU",{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+// ─── ЗАПУСК ИМПОРТА ───────────────────────────────────────────────────────────
+async function runImport(c, days) {
+  const label = days === 1 ? "вчера" : `последние ${days} дней`;
+  await send(c, `⏳ Загружаю операции из Т-Банка за ${label}...`);
+  try {
+    let totalAdded = 0, errors = [];
+    for (let i = 1; i <= days; i++) {
+      const result = await importOperations(i);
+      totalAdded += result.added;
+      errors = errors.concat(result.errors);
+    }
+    let msg = `✅ Импорт завершён!
+
+Период: ${label}
+Загружено: ${totalAdded} операций`;
+    if (errors.length) msg += `
+⚠️ Ошибок: ${errors.length}`;
+    await send(c, msg);
+  } catch (e) {
+    await send(c, `❌ Ошибка импорта: ${e.message}`);
+  }
+}
 
 // ─── CRON ──────────────────────────────────────────────────────────────────────
 
