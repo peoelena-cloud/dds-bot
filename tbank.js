@@ -115,20 +115,35 @@ async function getStatement(accountNumber, from, to) {
 async function importOperations(daysAgo = 1) {
   const { from, to, date } = getDateRange(daysAgo);
   const dateStr = date.toLocaleDateString('ru-RU');
-  let totalAdded = 0, errors = [];
+  let totalAdded = 0, errors = [], added = [];
 
   for (const acc of ACCOUNTS) {
     try {
       const ops = await getStatement(acc.number, from, to);
       console.log(`[TBank] ${acc.name}: ${ops.length} операций`);
+      // Диагностика: показываем первую операцию чтобы понять структуру
+      if (ops.length > 0) {
+        console.log(`[TBank] ПРИМЕР операции:`, JSON.stringify(ops[0]).slice(0, 500));
+      }
 
       for (const op of ops) {
         const row = mapOperation(op, acc.name);
         if (!row) continue;
         try {
           const result = await sendToSheet(row);
-          if (result.trim() !== 'duplicate') totalAdded++;
-        } catch (e) { errors.push(e.message); }
+          if (result.trim() === 'duplicate') {
+            // пропускаем дубль
+          } else {
+            totalAdded++;
+            added.push({
+              date: row.date,
+              account: row.account,
+              amount: row.amount,
+              type: row.type,
+              comment: row.comment.slice(0, 40),
+            });
+          }
+        } catch (e) { errors.push(`Запись: ${e.message}`); }
         await new Promise(r => setTimeout(r, 200));
       }
     } catch (e) {
@@ -136,7 +151,7 @@ async function importOperations(daysAgo = 1) {
       console.error(`[TBank] ${acc.name}:`, e.message);
     }
   }
-  return { date: dateStr, added: totalAdded, errors };
+  return { date: dateStr, added: totalAdded, rows: added, errors };
 }
 
 // ─── Получить отчёт из Apps Script ───────────────────────────────────────────
