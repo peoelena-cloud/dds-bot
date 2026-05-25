@@ -7,5 +7,9 @@
   },
   "engines": {
     "node": "18.x"
+  },
+  "dependencies": {
+    "node-cron": "^3.0.3",
+    "https-proxy-agent": "^7.0.4"
   }
 }
