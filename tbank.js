@@ -6,6 +6,9 @@ const FIXIE_URL       = process.env.FIXIE_URL;
 const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL
   || "https://script.google.com/macros/s/AKfycbwaJFeL76zIgWSPvvVNeyJN9cOGaD5Tsb8-Mzg0ZIKKw-SbemBfRI4E9bYaIc9-ipZ5/exec";
 
+// Правильный базовый URL T-Bank Business API
+const TBANK_BASE = "https://business.tinkoff.ru";
+
 const ACCOUNTS = [
   { number: '40802810300001801095', name: 'Тинькоф р/с'   },
   { number: '40802810800002568206', name: 'Карта ПМЖ'     },
@@ -24,12 +27,13 @@ async function tbankFetch(url) {
     const { HttpsProxyAgent } = await import('https-proxy-agent');
     options.agent = new HttpsProxyAgent(FIXIE_URL);
   }
+  console.log(`[TBank] GET ${url}`);
   const res = await fetch(url, options);
+  const text = await res.text();
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`T-Bank API ${res.status}: ${text}`);
+    throw new Error(`T-Bank API ${res.status}: ${text.slice(0, 200)}`);
   }
-  return res.json();
+  return JSON.parse(text);
 }
 
 // ─── Диапазон дат ─────────────────────────────────────────────────────────────
@@ -38,20 +42,23 @@ function getDateRange(daysAgo = 1) {
   d.setDate(d.getDate() - daysAgo);
   const from = new Date(d); from.setHours(0, 0, 0, 0);
   const to   = new Date(d); to.setHours(23, 59, 59, 999);
-  const fmt  = (dt) => dt.toISOString().replace('Z', '+03:00');
+  // T-Bank ожидает формат ISO без миллисекунд
+  const fmt = (dt) => dt.toISOString().slice(0, 19) + '+03:00';
   return { from: fmt(from), to: fmt(to), date: d };
 }
 
 // ─── Маппинг операции ─────────────────────────────────────────────────────────
 function mapOperation(op, accountName) {
-  const rawAmount = op.operationAmount ?? op.amount ?? 0;
+  // T-Bank возвращает разные поля в зависимости от версии API
+  const rawAmount = op.operationAmount ?? op.amount ?? op.sum ?? 0;
   const amount    = parseFloat(rawAmount);
   const isIncome  = amount > 0;
-  const desc      = (op.description || op.merchantName || '').trim();
-  const opDate    = (op.operationDate || op.date || '').slice(0, 10);
-  const opId      = op.operationId || op.id || '';
+  const desc      = (op.description || op.purpose || op.paymentPurpose || op.merchantName || '').trim();
+  // Дата: разные поля в разных версиях
+  const opDate    = (op.operationDate || op.date || op.executionDate || '').slice(0, 10);
+  const opId      = op.operationId || op.id || op.externalOperationId || '';
 
-  // Карта ПМЖ: пропускаем Продамус (отдельный импорт)
+  // Карта ПМЖ: пропускаем Продамус
   if (accountName === 'Карта ПМЖ') {
     if (/prodamus|продамус/i.test(desc)) return null;
   }
@@ -81,6 +88,22 @@ async function sendToSheet(row) {
   return res.text();
 }
 
+// ─── Получить список счетов из API ───────────────────────────────────────────
+async function getAccountList() {
+  const data = await tbankFetch(`${TBANK_BASE}/api/v1/company/accounts`);
+  return Array.isArray(data) ? data : (data.accounts || data.payload || []);
+}
+
+// ─── Получить выписку по счёту ────────────────────────────────────────────────
+async function getStatement(accountNumber, from, to) {
+  // Правильный эндпоинт T-Bank Business API
+  const url = `${TBANK_BASE}/api/v1/bank-statement?accountNumber=${accountNumber}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+  const data = await tbankFetch(url);
+  // API возвращает { payload: { operation: [...] } } или { operation: [...] }
+  const payload = data.payload || data;
+  return Array.isArray(payload) ? payload : (payload.operation || payload.operations || []);
+}
+
 // ─── Импорт операций ─────────────────────────────────────────────────────────
 async function importOperations(daysAgo = 1) {
   const { from, to, date } = getDateRange(daysAgo);
@@ -89,9 +112,7 @@ async function importOperations(daysAgo = 1) {
 
   for (const acc of ACCOUNTS) {
     try {
-      const url  = `https://business.tinkoff.ru/openapi/api/v1/statement/${acc.number}?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
-      const data = await tbankFetch(url);
-      const ops  = Array.isArray(data) ? data : (data.payload || data.operations || []);
+      const ops = await getStatement(acc.number, from, to);
       console.log(`[TBank] ${acc.name}: ${ops.length} операций`);
 
       for (const op of ops) {
@@ -99,7 +120,7 @@ async function importOperations(daysAgo = 1) {
         if (!row) continue;
         try {
           const result = await sendToSheet(row);
-          if (result !== 'duplicate') totalAdded++;
+          if (result.trim() !== 'duplicate') totalAdded++;
         } catch (e) { errors.push(e.message); }
         await new Promise(r => setTimeout(r, 200));
       }
@@ -122,13 +143,11 @@ async function fetchReport(params) {
 async function morningReport(bot, userIds) {
   try {
     const imp = await importOperations(1);
-
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     const dateStr = yesterday.toISOString().slice(0, 10);
-
-    const raw    = await fetchReport({ date: dateStr });
-    const data   = JSON.parse(raw);
+    const raw  = await fetchReport({ date: dateStr });
+    const data = JSON.parse(raw);
 
     const msg =
       `🌅 <b>Доброе утро! Итоги ${imp.date}</b>\n\n` +
@@ -148,7 +167,8 @@ async function morningReport(bot, userIds) {
 }
 
 function fmtMoney(n) {
-  return (typeof n === 'number' ? n : 0).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return (typeof n === 'number' ? n : 0)
+    .toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 module.exports = { importOperations, fetchReport, morningReport };
