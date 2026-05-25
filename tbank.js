@@ -7,7 +7,7 @@ const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL
   || "https://script.google.com/macros/s/AKfycbwaJFeL76zIgWSPvvVNeyJN9cOGaD5Tsb8-Mzg0ZIKKw-SbemBfRI4E9bYaIc9-ipZ5/exec";
 
 // Правильный базовый URL T-Bank Business API
-const TBANK_BASE = "https://business.tinkoff.ru";
+const TBANK_BASE = "https://business.tinkoff.ru/openapi";
 
 const ACCOUNTS = [
   { number: '40802810300001801095', name: 'Тинькоф р/с'   },
@@ -96,12 +96,19 @@ async function getAccountList() {
 
 // ─── Получить выписку по счёту ────────────────────────────────────────────────
 async function getStatement(accountNumber, from, to) {
-  // Правильный эндпоинт T-Bank Business API
-  const url = `${TBANK_BASE}/api/v1/bank-statement?accountNumber=${accountNumber}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+  // Новый эндпоинт T-Bank Business API (openapi/api/v1/statement)
+  const url = `${TBANK_BASE}/api/v1/statement?accountNumber=${accountNumber}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
   const data = await tbankFetch(url);
-  // API возвращает { payload: { operation: [...] } } или { operation: [...] }
+  // Новый API: { payload: { operation: [...] } }
+  // Старый API: { payload: { operation: [...] } } или массив напрямую
   const payload = data.payload || data;
-  return Array.isArray(payload) ? payload : (payload.operation || payload.operations || []);
+  if (Array.isArray(payload)) return payload;
+  const ops = payload.operation || payload.operations || payload.items || [];
+  // Пагинация: если есть nextCursor — логируем (пока не реализуем)
+  if (payload.nextCursor) {
+    console.log(`[TBank] Внимание: есть ещё операции (nextCursor), загружена только первая порция`);
+  }
+  return ops;
 }
 
 // ─── Импорт операций ─────────────────────────────────────────────────────────
