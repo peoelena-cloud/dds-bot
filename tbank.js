@@ -122,7 +122,7 @@ function mapOperation(op, accountName) {
   } else {
     // Расходы
     if (category === 'fee')                              ddsStat = 'Комиссия за переводы';
-    else if (/перевод собственных средств|ндс не облагается/i.test(desc)) ddsStat = 'Выплата руководителя';
+    else if (/перевод собственных средств|ндс не облагается/i.test(desc)) ddsStat = 'Выплата руководителю';
     else if (category === 'contragentPeople')             ddsStat = 'Выплата контрагентам';
     else if (/налог|fns|ифнс/i.test(desc))               ddsStat = 'Налоги';
     else if (category === 'taxPeople' || category === 'tax') ddsStat = 'Налоги';
