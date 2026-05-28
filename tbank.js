@@ -15,25 +15,52 @@ const ACCOUNTS = [
   { number: '40802810500001791264', name: 'дима клуб ппш' },
 ];
 
-// ─── Запрос через Fixie ───────────────────────────────────────────────────────
-async function tbankFetch(url) {
-  const options = {
-    headers: {
-      'Authorization': `Bearer ${TBANK_TOKEN}`,
-      'Content-Type': 'application/json',
-    },
-  };
-  if (FIXIE_URL) {
-    const { HttpsProxyAgent } = await import('https-proxy-agent');
-    options.agent = new HttpsProxyAgent(FIXIE_URL);
-  }
-  console.log(`[TBank] GET ${url}`);
-  const res = await fetch(url, options);
-  const text = await res.text();
-  if (!res.ok) {
-    throw new Error(`T-Bank API ${res.status}: ${text.slice(0, 200)}`);
-  }
-  return JSON.parse(text);
+// ─── Запрос через Fixie (tunnel для HTTPS через HTTP-прокси) ─────────────────
+function tbankFetch(url) {
+  return new Promise((resolve, reject) => {
+    const https  = require('https');
+    const tunnel = require('tunnel');
+    const urlObj = new URL(url);
+
+    let agent = undefined;
+    if (FIXIE_URL) {
+      const proxy = new URL(FIXIE_URL);
+      agent = tunnel.httpsOverHttp({
+        proxy: {
+          host:      proxy.hostname,
+          port:      parseInt(proxy.port) || 80,
+          proxyAuth: `${proxy.username}:${proxy.password}`,
+        }
+      });
+    }
+
+    const options = {
+      hostname: urlObj.hostname,
+      path:     urlObj.pathname + urlObj.search,
+      method:   'GET',
+      headers:  {
+        'Authorization': `Bearer ${TBANK_TOKEN}`,
+        'Content-Type':  'application/json',
+      },
+      agent,
+    };
+
+    console.log(`[TBank] GET ${url}`);
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          reject(new Error(`T-Bank API ${res.statusCode}: ${data.slice(0, 200)}`));
+        } else {
+          try { resolve(JSON.parse(data)); }
+          catch (e) { reject(new Error(`JSON parse error: ${data.slice(0, 100)}`)); }
+        }
+      });
+    });
+    req.on('error', reject);
+    req.end();
+  });
 }
 
 // ─── Диапазон дат ─────────────────────────────────────────────────────────────
