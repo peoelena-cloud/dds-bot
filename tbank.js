@@ -49,31 +49,54 @@ function getDateRange(daysAgo = 1) {
 
 // ─── Маппинг операции ─────────────────────────────────────────────────────────
 function mapOperation(op, accountName) {
-  // T-Bank возвращает разные поля в зависимости от версии API
+  // Определяем тип операции по нескольким признакам
+  const typeOfOp = op.typeOfOperation || '';
+  // creditingAmount > 0 = поступление, debitingAmount > 0 = расход
+  const crediting = parseFloat(op.creditingAmount || 0);
+  const debiting  = parseFloat(op.debitingAmount  || 0);
   const rawAmount = op.operationAmount ?? op.amount ?? op.sum ?? 0;
-  const amount    = parseFloat(rawAmount);
-  const isIncome  = amount > 0;
-  const desc      = (op.description || op.purpose || op.paymentPurpose || op.merchantName || '').trim();
-  // Дата: разные поля в разных версиях
-  const opDate    = (op.operationDate || op.date || op.executionDate || '').slice(0, 10);
-  const opId      = op.operationId || op.id || op.externalOperationId || '';
+  const amount    = Math.abs(parseFloat(rawAmount));
+
+  let signIncome;
+  if (debiting > 0 && crediting === 0) {
+    signIncome = false; // однозначно расход
+  } else if (crediting > 0 && debiting === 0) {
+    signIncome = true;  // однозначно поступление
+  } else if (typeOfOp === 'Debit') {
+    signIncome = false;
+  } else if (typeOfOp === 'Credit') {
+    signIncome = true;
+  } else {
+    // последний вариант — по знаку суммы
+    signIncome = parseFloat(rawAmount) > 0;
+  }
+
+  const desc   = (op.description || op.paymentPurpose || op.purpose || op.merchantName || '').trim();
+  const opDate = (op.operationDate || op.date || op.executionDate || '').slice(0, 10);
+  const opId   = op.operationId || op.id || op.externalOperationId || '';
+
+  // Пропускаем нулевые операции
+  if (amount === 0) return null;
 
   // Карта ПМЖ: пропускаем Продамус
   if (accountName === 'Карта ПМЖ') {
     if (/prodamus|продамус/i.test(desc)) return null;
   }
 
+  // Определяем проект
   let project = '';
   if (accountName === 'Тинькоф р/с') {
     if (/система|getcourse|геткурс/i.test(desc)) project = 'Ключи изобилия 2026';
   }
   if (accountName === 'дима клуб ппш') project = 'Клуб Перепрошитых';
 
-  let ddsStat = isIncome ? 'Прочие поступления' : 'Прочие расходы';
-  if (!isIncome && /налог|fns|ифнс/i.test(desc)) ddsStat = 'Налоги';
+  // Статья ДДС
+  let ddsStat = signIncome ? 'Прочие поступления' : 'Прочие расходы';
+  if (!signIncome && /налог|fns|ифнс/i.test(desc)) ddsStat = 'Налоги';
+  if (!signIncome && /комисси/i.test(desc)) ddsStat = 'Комиссии банков, обслуживание счёта';
 
   return { opId, date: opDate, account: accountName,
-           amount: Math.abs(amount), type: isIncome ? 'Поступление' : 'Расход',
+           amount, type: signIncome ? 'Поступление' : 'Расход',
            dds: ddsStat, project, comment: desc };
 }
 
@@ -85,7 +108,12 @@ async function sendToSheet(row) {
     comment: `[API] ${row.comment}`, opId: row.opId,
   });
   const res = await fetch(`${APPS_SCRIPT_URL}?${params}`);
-  return res.text();
+  const text = await res.text();
+  const trimmed = text.trim();
+  if (trimmed !== 'OK' && trimmed !== 'duplicate') {
+    console.log(`[TBank] Apps Script ответил: ${trimmed.slice(0, 100)}`);
+  }
+  return trimmed;
 }
 
 // ─── Получить список счетов из API ───────────────────────────────────────────
@@ -121,12 +149,11 @@ async function importOperations(daysAgo = 1) {
     try {
       const ops = await getStatement(acc.number, from, to);
       console.log(`[TBank] ${acc.name}: ${ops.length} операций`);
-      // Диагностика: показываем первую операцию чтобы понять структуру
-      if (ops.length > 0) {
-        console.log(`[TBank] ПРИМЕР операции:`, JSON.stringify(ops[0]).slice(0, 500));
-      }
+
 
       for (const op of ops) {
+        // Диагностика типа операции
+        console.log(`[TBank] op: typeOfOperation=${op.typeOfOperation}, operationAmount=${op.operationAmount}, category=${op.category}, debitingAmount=${op.debitingAmount}, creditingAmount=${op.creditingAmount}`);
         const row = mapOperation(op, acc.name);
         if (!row) continue;
         try {
