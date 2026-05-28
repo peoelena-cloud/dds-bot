@@ -4,7 +4,7 @@ const fetch = (...args) => import('node-fetch').then(({ default: f }) => f(...ar
 const TBANK_TOKEN     = process.env.TBANK_TOKEN;
 const FIXIE_URL       = process.env.FIXIE_URL;
 const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL
-  || "https://script.google.com/macros/s/AKfycbwaJFeL76zIgWSPvvVNeyJN9cOGaD5Tsb8-Mzg0ZIKKw-SbemBfRI4E9bYaIc9-ipZ5/exec";
+  || "https://script.google.com/macros/s/AKfycbzLFoUYvY6qDpF9QYj3zrPMIFq6KDpYw39BvuMPp2KKrqhx6F8qs3hVKYwKYt5b8w/exec";
 
 // Правильный базовый URL T-Bank Business API
 const TBANK_BASE = "https://business.tinkoff.ru/openapi";
@@ -49,34 +49,26 @@ function getDateRange(daysAgo = 1) {
 
 // ─── Маппинг операции ─────────────────────────────────────────────────────────
 function mapOperation(op, accountName) {
-  // Определяем тип операции по нескольким признакам
+  // typeOfOperation: "Debit" = расход, "Credit" = поступление
   const typeOfOp = op.typeOfOperation || '';
-  // creditingAmount > 0 = поступление, debitingAmount > 0 = расход
-  const crediting = parseFloat(op.creditingAmount || 0);
-  const debiting  = parseFloat(op.debitingAmount  || 0);
+  const category = op.category || '';
+  const signIncome = typeOfOp === 'Credit';
+
   const rawAmount = op.operationAmount ?? op.amount ?? op.sum ?? 0;
   const amount    = Math.abs(parseFloat(rawAmount));
-
-  let signIncome;
-  if (debiting > 0 && crediting === 0) {
-    signIncome = false; // однозначно расход
-  } else if (crediting > 0 && debiting === 0) {
-    signIncome = true;  // однозначно поступление
-  } else if (typeOfOp === 'Debit') {
-    signIncome = false;
-  } else if (typeOfOp === 'Credit') {
-    signIncome = true;
-  } else {
-    // последний вариант — по знаку суммы
-    signIncome = parseFloat(rawAmount) > 0;
-  }
-
-  const desc   = (op.description || op.paymentPurpose || op.purpose || op.merchantName || '').trim();
-  const opDate = (op.operationDate || op.date || op.executionDate || '').slice(0, 10);
-  const opId   = op.operationId || op.id || op.externalOperationId || '';
+  const desc      = (op.description || op.paymentPurpose || op.purpose || op.merchantName || '').trim();
+  const opDate    = (op.operationDate || op.date || op.executionDate || '').slice(0, 10);
+  const opId      = op.operationId || op.id || op.externalOperationId || '';
 
   // Пропускаем нулевые операции
   if (amount === 0) return null;
+
+  // selfTransfer — перемещение между своими счетами
+  if (/selfTransfer/i.test(category)) {
+    return { opId, date: opDate, account: accountName,
+             amount, type: typeOfOp === 'Credit' ? 'Поступление' : 'Расход',
+             dds: 'Перемещение средств', project: '', comment: desc };
+  }
 
   // Карта ПМЖ: пропускаем Продамус
   if (accountName === 'Карта ПМЖ') {
@@ -90,10 +82,21 @@ function mapOperation(op, accountName) {
   }
   if (accountName === 'дима клуб ппш') project = 'Клуб Перепрошитых';
 
-  // Статья ДДС
-  let ddsStat = signIncome ? 'Прочие поступления' : 'Прочие расходы';
-  if (!signIncome && /налог|fns|ифнс/i.test(desc)) ddsStat = 'Налоги';
-  if (!signIncome && /комисси/i.test(desc)) ddsStat = 'Комиссии банков, обслуживание счёта';
+  // Статья ДДС по category из T-Bank
+  let ddsStat;
+  if (signIncome) {
+    // Поступления
+    if (category === 'incomePeople')    ddsStat = 'Поступления от клиентов';
+    else if (category === 'contragentPeople') ddsStat = 'Поступления от контрагентов';
+    else                                ddsStat = 'Прочие поступления';
+  } else {
+    // Расходы
+    if (category === 'fee')                   ddsStat = 'Комиссия за переводы';
+    else if (category === 'contragentPeople') ddsStat = 'Выплата контрагентам';
+    else if (/налог|fns|ифнс/i.test(desc))   ddsStat = 'Налоги';
+    else if (category === 'taxPeople' || category === 'tax') ddsStat = 'Налоги';
+    else                                      ddsStat = 'Прочие расходы';
+  }
 
   return { opId, date: opDate, account: accountName,
            amount, type: signIncome ? 'Поступление' : 'Расход',
@@ -152,8 +155,6 @@ async function importOperations(daysAgo = 1) {
 
 
       for (const op of ops) {
-        // Диагностика типа операции
-        console.log(`[TBank] op: typeOfOperation=${op.typeOfOperation}, operationAmount=${op.operationAmount}, category=${op.category}, debitingAmount=${op.debitingAmount}, creditingAmount=${op.creditingAmount}`);
         const row = mapOperation(op, acc.name);
         if (!row) continue;
         try {
