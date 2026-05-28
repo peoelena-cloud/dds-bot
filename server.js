@@ -498,11 +498,55 @@ async function runImport(c, days) {
 
 // ─── CRON ──────────────────────────────────────────────────────────────────────
 
-// Импорт из банка каждую ночь в 03:00 мск
+// Импорт из банка каждую ночь в 03:00 мск + сводка в Telegram
 cron.schedule('0 0 3 * * *', async () => {
   console.log('[CRON] Ночной импорт из Т-Банка...');
-  const result = await importOperations(1);
-  console.log(`[CRON] Готово: ${result.added} строк добавлено`);
+  for (const uid of USER_IDS) {
+    await send(uid, '⏳ Ночной импорт из Т-Банка за вчера...');
+  }
+  try {
+    const result = await importOperations(1);
+    console.log(`[CRON] Готово: ${result.added} строк добавлено`);
+
+    let totalIncome = 0, totalExpense = 0;
+    const byAccount = {}, byArticle = {};
+    for (const row of (result.rows || [])) {
+      if (!byAccount[row.account]) byAccount[row.account] = { inc: 0, exp: 0, cnt: 0 };
+      byAccount[row.account].cnt++;
+      if (row.type === 'Поступление') { byAccount[row.account].inc += row.amount; totalIncome += row.amount; }
+      else                            { byAccount[row.account].exp += row.amount; totalExpense += row.amount; }
+      if (row.type !== 'Поступление') byArticle[row.dds] = (byArticle[row.dds] || 0) + row.amount;
+    }
+
+    let msg;
+    if (result.added === 0) {
+      msg = `🌙 Ночной импорт завершён\nОпераций за вчера не найдено.`;
+    } else {
+      msg = `🌙 <b>Ночной импорт завершён</b>\n`;
+      msg += `📦 Операций добавлено: <b>${result.added}</b>\n\n`;
+      msg += `💰 Доходы: <b>${fmt(totalIncome)} ₽</b>\n`;
+      msg += `💸 Расходы: <b>${fmt(totalExpense)} ₽</b>\n`;
+      msg += `📈 Разница: <b>${fmt(totalIncome - totalExpense)} ₽</b>\n`;
+
+      msg += `\n🏦 <b>По счетам:</b>\n`;
+      for (const [acc, s] of Object.entries(byAccount)) {
+        msg += `  ${acc} (${s.cnt} опер.)\n`;
+        if (s.inc > 0) msg += `    💰 +${fmt(s.inc)} ₽\n`;
+        if (s.exp > 0) msg += `    💸 −${fmt(s.exp)} ₽\n`;
+      }
+
+      const topExp = Object.entries(byArticle).sort((a,b) => b[1]-a[1]).slice(0, 5);
+      if (topExp.length > 0) {
+        msg += `\n💸 <b>Топ расходов:</b>\n`;
+        topExp.forEach(([art, sum]) => { msg += `  ${art.slice(0,28)}: ${fmt(sum)} ₽\n`; });
+      }
+    }
+
+    for (const uid of USER_IDS) await send(uid, msg);
+  } catch (e) {
+    console.error('[CRON] Ошибка:', e.message);
+    for (const uid of USER_IDS) await send(uid, `❌ Ночной импорт: ошибка — ${e.message}`);
+  }
 }, { timezone: 'Europe/Moscow' });
 
 // Утренний отчёт каждый день в 09:00 мск
