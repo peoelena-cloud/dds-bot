@@ -92,9 +92,11 @@ function mapOperation(op, accountName) {
 
   // selfTransfer — перемещение между своими счетами
   if (/selfTransfer/i.test(category)) {
+    const isIncomeST = typeOfOp === 'Credit';
     return { opId, date: opDate, account: accountName,
-             amount, type: typeOfOp === 'Credit' ? 'Поступление' : 'Расход',
-             dds: 'Перемещение средств', project: '', comment: desc };
+             amount, type: isIncomeST ? 'Поступление' : 'Расход',
+             dds: isIncomeST ? 'Перемещение средств (поступление)' : 'Перемещение средств (списание)',
+             project: '', comment: desc };
   }
 
   // Карта ПМЖ: пропускаем Продамус
@@ -113,16 +115,18 @@ function mapOperation(op, accountName) {
   let ddsStat;
   if (signIncome) {
     // Поступления
-    if (category === 'incomePeople')    ddsStat = 'Поступления от клиентов';
+    if (/перевод собственных средств/i.test(desc)) ddsStat = 'Перемещение средств (поступление)';
+    else if (category === 'incomePeople')    ddsStat = 'Поступления от клиентов';
     else if (category === 'contragentPeople') ddsStat = 'Поступления от контрагентов';
     else                                ddsStat = 'Прочие поступления';
   } else {
     // Расходы
-    if (category === 'fee')                   ddsStat = 'Комиссия за переводы';
-    else if (category === 'contragentPeople') ddsStat = 'Выплата контрагентам';
-    else if (/налог|fns|ифнс/i.test(desc))   ddsStat = 'Налоги';
+    if (category === 'fee')                              ddsStat = 'Комиссия за переводы';
+    else if (/перевод собственных средств|ндс не облагается/i.test(desc)) ddsStat = 'Выплата руководителя';
+    else if (category === 'contragentPeople')             ddsStat = 'Выплата контрагентам';
+    else if (/налог|fns|ифнс/i.test(desc))               ddsStat = 'Налоги';
     else if (category === 'taxPeople' || category === 'tax') ddsStat = 'Налоги';
-    else                                      ddsStat = 'Прочие расходы';
+    else                                                  ddsStat = 'Прочие расходы';
   }
 
   return { opId, date: opDate, account: accountName,
