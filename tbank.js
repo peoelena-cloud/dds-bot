@@ -195,10 +195,11 @@ async function importOperations(daysAgo = 1) {
           } else {
             totalAdded++;
             added.push({
-              date: row.date,
+              date:    row.date,
               account: row.account,
-              amount: row.amount,
-              type: row.type,
+              amount:  row.amount,
+              type:    row.type,
+              dds:     row.dds,
               comment: row.comment.slice(0, 40),
             });
           }
