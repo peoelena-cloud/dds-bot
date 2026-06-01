@@ -101,6 +101,12 @@ async function handleUpdate(update) {
       answer(update.callback_query.id);
       if (!ALLOWED.includes(c)) return;
       const cbData = update.callback_query.data;
+      // Выбор года — ввод вручную
+      if (cbData === 'year_custom') {
+        states[c] = { waitYearInput: true };
+        await send(c, "📅 Введите год:\nНапример: <b>2023</b>");
+        return;
+      }
       // Выбор года
       if (cbData && cbData.startsWith('year_')) {
         const year = cbData.replace('year_', '');
@@ -144,6 +150,22 @@ async function handleText(c, t) {
 
   const st = states[c];
   if (!st) { await mainMenu(c); return; }
+
+  if (st.waitYearInput) {
+    const year = parseInt(t);
+    if (isNaN(year) || year < 2020 || year > 2030) {
+      await send(c, "❌ Введите корректный год (например: 2023)"); return;
+    }
+    delete states[c];
+    await send(c, `⏳ Загружаю отчёт за ${year}...`);
+    try {
+      const raw = await callAPI({ action: "report", year: String(year) });
+      const data = JSON.parse(raw);
+      const text = formatReportMsg(data, year + " год");
+      await send(c, text, { inline_keyboard: [[{ text: "☰ Меню", callback_data: "MENU" }]] });
+    } catch (e) { await send(c, `❌ Ошибка: ${e.message}`); }
+    return;
+  }
 
   if (st.waitImportDays) {
     const days = parseInt(t);
@@ -240,7 +262,8 @@ async function handleBtn(c, d) {
         { text: String(cy),   callback_data: `year_${cy}`   },
         { text: String(cy-1), callback_data: `year_${cy-1}` },
         { text: String(cy-2), callback_data: `year_${cy-2}` }
-      ]
+      ],
+      [{ text: "📅 Другой год...", callback_data: "year_custom" }]
     ]});
     return;
   }
@@ -496,6 +519,17 @@ function formatReportMsg(data, periodLabel) {
 `;
     for (const [proj, sum] of Object.entries(data.detailsProjects).sort((a,b) => b[1]-a[1])) {
       msg += `  ${proj.substring(0,28)}: ${fmt(sum)} ₽
+`;
+    }
+  }
+
+  // Доходы по статьям
+  if (data.detailsIncome && Object.keys(data.detailsIncome).length > 0) {
+    msg += `
+💰 <b>Доходы по статьям:</b>
+`;
+    for (const [art, sum] of Object.entries(data.detailsIncome).sort((a,b) => b[1]-a[1])) {
+      msg += `  ${art.substring(0,30)}: ${fmt(sum)} ₽
 `;
     }
   }
