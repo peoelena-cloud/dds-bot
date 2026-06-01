@@ -6,7 +6,7 @@ const { importOperations, fetchReport, morningReport } = require('./tbank');
 const USER_IDS = [433916681, 325532225]; // Елена, Аркадий
 
 const BOT_TOKEN = "8410628068:AAGseZ3UI7elPdJi_p7BqAcwXtxQ_kILTSo";
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyKiuxsWoEparYFWr4mrCbW7qpyPWGDFisL5iqVc9KIZlAdXKEquzN3YhEGkm1j2Avl/exec";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzLFoUYvY6qDpF9QYj3zrPMIFq6KDpYw39BvuMPp2KKrqhx6F8qs3hVKYwKYt5b8w/exec";
 const ALLOWED = [433916681, 325532225];
 
 // ─── СПРАВОЧНИКИ ───────────────────────────────────────────────────────────────
@@ -461,21 +461,31 @@ function fmt(n) { return (typeof n === "number" ? n : 0).toLocaleString("ru-RU",
 
 // ─── ФОРМАТИРОВАНИЕ ОТЧЁТА (единый формат везде) ─────────────────────────────
 function formatReportMsg(data, periodLabel) {
-  const ruk = data['руководителю'] || 0;
+  const ruk    = data['руководителю'] || 0;
+  const займы  = data['займы'] || 0;
+  const остаток = data['остаток'] ?? (data.profit - ruk);
+
   let msg = `📊 <b>Отчёт: ${periodLabel}</b>
 
 `;
-  msg += `💰 Доходы: <b>${fmt(data.income)} ₽</b>
+
+  // Доходы
+  msg += `💰 Доходы: <b>${fmt(data.income)} ₽</b>`;
+  if (займы > 0) msg += ` (в т.ч. займы: ${fmt(займы)} ₽)`;
+  msg += `
 `;
   msg += `💸 Расходы: <b>${fmt(data.expense)} ₽</b>
 `;
   msg += `──────────────────
 `;
-  msg += `📈 Прибыль: <b>${fmt(data.profit)} ₽</b>
+  msg += `📈 Операционная прибыль: <b>${fmt(data.profit)} ₽</b>
 `;
   if (ruk > 0) {
-    msg += `
-👤 Выплата руководителю: <b>${fmt(ruk)} ₽</b>
+    msg += `👤 Выплачено себе: <b>${fmt(ruk)} ₽</b>
+`;
+    msg += `──────────────────
+`;
+    msg += `💎 Остаток в бизнесе: <b>${fmt(остаток)} ₽</b>
 `;
   }
 
