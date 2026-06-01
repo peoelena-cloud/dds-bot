@@ -132,8 +132,7 @@ async function handleText(c, t) {
   if (t === "/balance") { delete states[c]; await showBalance(c); return; }
   if (t === "/report")  { delete states[c]; await reportMenu(c); return; }
   if (t === "/import")  { delete states[c];
-    await send(c, "📥 <b>Импорт из Т-Банка</b>
-За какой период загрузить?", { inline_keyboard: [
+    await send(c, "📥 <b>Импорт из Т-Банка</b>\nЗа какой период загрузить?", { inline_keyboard: [
       [{ text: "Вчера",              callback_data: "IMP.1"      }],
       [{ text: "3 дня",              callback_data: "IMP.3"      }],
       [{ text: "7 дней",             callback_data: "IMP.7"      }],
@@ -290,10 +289,7 @@ async function handleBtn(c, d) {
   if (d.startsWith("RM.")) {
     if (d === "RM.custom") {
       states[c] = { waitReportInput: true };
-      await send(c, "📅 Введите:
-
-Дата: ДД.ММ.ГГГГ
-Месяц: ММ.ГГГГ");
+      await send(c, "📅 Введите:\n\nДата: ДД.ММ.ГГГГ\nМесяц: ММ.ГГГГ");
       return;
     }
     if (d === "RM.yest") {
@@ -684,8 +680,7 @@ http.createServer(async (req, res) => {
 
       let msg;
       if (result.added === 0) {
-        msg = "🌙 Ночной импорт завершён
-Операций за вчера не найдено.";
+        msg = "🌙 Ночной импорт завершён\nОпераций за вчера не найдено.";
         for (const uid of USER_IDS) await send(uid, msg);
       } else {
         msg = `🌙 <b>Ночной импорт завершён</b>
