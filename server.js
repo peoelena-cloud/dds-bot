@@ -478,18 +478,74 @@ async function runImport(c, days) {
   const label = days === 1 ? "вчера" : `последние ${days} дней`;
   await send(c, `⏳ Загружаю операции из Т-Банка за ${label}...`);
   try {
-    let totalAdded = 0, errors = [];
+    let totalAdded = 0, allRows = [], allErrors = [];
+
     for (let i = 1; i <= days; i++) {
       const result = await importOperations(i);
       totalAdded += result.added;
-      errors = errors.concat(result.errors);
+      allRows = allRows.concat(result.rows || []);
+      allErrors = allErrors.concat(result.errors || []);
     }
-    let msg = `✅ Импорт завершён!
 
-Период: ${label}
-Загружено: ${totalAdded} операций`;
-    if (errors.length) msg += `
-⚠️ Ошибок: ${errors.length}`;
+    if (allErrors.length > 0) {
+      let errMsg = `⚠️ <b>Ошибки при импорте (${allErrors.length}):</b>
+`;
+      allErrors.slice(0, 5).forEach((e, i) => { errMsg += `${i+1}. ${e}
+`; });
+      if (allErrors.length > 5) errMsg += `...и ещё ${allErrors.length - 5}`;
+      await send(c, errMsg);
+    }
+
+    if (totalAdded === 0) {
+      await send(c, `ℹ️ За период «${label}» новых операций не найдено.`);
+      return;
+    }
+
+    let totalIncome = 0, totalExpense = 0;
+    const byAccount = {}, byArticle = {};
+    for (const row of allRows) {
+      if (!byAccount[row.account]) byAccount[row.account] = { inc: 0, exp: 0, cnt: 0 };
+      byAccount[row.account].cnt++;
+      if (row.type === 'Поступление') { byAccount[row.account].inc += row.amount; totalIncome += row.amount; }
+      else                            { byAccount[row.account].exp += row.amount; totalExpense += row.amount; }
+      if (row.type !== 'Поступление') byArticle[row.dds] = (byArticle[row.dds] || 0) + row.amount;
+    }
+
+    let msg = `✅ <b>Импорт завершён!</b>
+`;
+    msg += `📅 Период: ${label}
+`;
+    msg += `📦 Операций добавлено: <b>${totalAdded}</b>
+
+`;
+    msg += `💰 Доходы итого: <b>${fmt(totalIncome)} ₽</b>
+`;
+    msg += `💸 Расходы итого: <b>${fmt(totalExpense)} ₽</b>
+`;
+    msg += `📈 Разница: <b>${fmt(totalIncome - totalExpense)} ₽</b>
+`;
+
+    msg += `
+🏦 <b>По счетам:</b>
+`;
+    for (const [acc, s] of Object.entries(byAccount)) {
+      msg += `  ${acc} (${s.cnt} опер.)
+`;
+      if (s.inc > 0) msg += `    💰 +${fmt(s.inc)} ₽
+`;
+      if (s.exp > 0) msg += `    💸 −${fmt(s.exp)} ₽
+`;
+    }
+
+    const topExp = Object.entries(byArticle).sort((a,b) => b[1]-a[1]).slice(0, 5);
+    if (topExp.length > 0) {
+      msg += `
+💸 <b>Топ расходов по статьям:</b>
+`;
+      topExp.forEach(([art, sum]) => { msg += `  ${art.slice(0, 28)}: ${fmt(sum)} ₽
+`; });
+    }
+
     await send(c, msg);
   } catch (e) {
     await send(c, `❌ Ошибка импорта: ${e.message}`);
