@@ -4,7 +4,7 @@ const fetch = (...args) => import('node-fetch').then(({ default: f }) => f(...ar
 const TBANK_TOKEN     = process.env.TBANK_TOKEN;
 const FIXIE_URL       = process.env.FIXIE_URL;
 const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL
-  || "https://script.google.com/macros/s/AKfycbzLFoUYvY6qDpF9QYj3zrPMIFq6KDpYw39BvuMPp2KKrqhx6F8qs3hVKYwKYt5b8w/exec";
+  || "https://script.google.com/macros/s/AKfycbyKiuxsWoEparYFWr4mrCbW7qpyPWGDFisL5iqVc9KIZlAdXKEquzN3YhEGkm1j2Avl/exec";
 
 // Правильный базовый URL T-Bank Business API
 const TBANK_BASE = "https://business.tinkoff.ru/openapi";
