@@ -108,23 +108,7 @@ async function handleUpdate(update) {
         try {
           const raw = await callAPI({ action: "report", year });
           const data = JSON.parse(raw);
-          let text = `📊 <b>Отчёт за ${year} год</b>\n\n`;
-          text += `💰 Доходы: <b>${fmt(data.income)} ₽</b>\n`;
-          text += `💸 Расходы: <b>${fmt(data.expense)} ₽</b>\n`;
-          text += `──────────────────\n`;
-          text += `📈 Прибыль: <b>${fmt(data.profit)} ₽</b>\n`;
-          if (data.detailsIncome && Object.keys(data.detailsIncome).length > 0) {
-            text += `\n💰 <b>Доходы по статьям:</b>\n`;
-            for (const [art, sum] of Object.entries(data.detailsIncome).sort((a,b) => b[1]-a[1])) {
-              text += `  ${art.substring(0,30)}: ${fmt(sum)}\n`;
-            }
-          }
-          if (data.detailsExpense && Object.keys(data.detailsExpense).length > 0) {
-            text += `\n💸 <b>Расходы по статьям:</b>\n`;
-            for (const [art, sum] of Object.entries(data.detailsExpense).sort((a,b) => b[1]-a[1]).slice(0,15)) {
-              text += `  ${art.substring(0,30)}: ${fmt(sum)}\n`;
-            }
-          }
+          const text = formatReportMsg(data, year + " год");
           await send(c, text, { inline_keyboard: [[{ text: "☰ Меню", callback_data: "MENU" }]] });
         } catch (e) {
           await send(c, `❌ Ошибка: ${e.message}`);
@@ -145,6 +129,19 @@ async function handleUpdate(update) {
 async function handleText(c, t) {
   if (t === "/start" || t === "/menu") { delete states[c]; await mainMenu(c); return; }
   if (t === "/cancel") { delete states[c]; await send(c, "✅ Отменено."); await mainMenu(c); return; }
+  if (t === "/balance") { delete states[c]; await showBalance(c); return; }
+  if (t === "/report")  { delete states[c]; await reportMenu(c); return; }
+  if (t === "/import")  { delete states[c];
+    await send(c, "📥 <b>Импорт из Т-Банка</b>
+За какой период загрузить?", { inline_keyboard: [
+      [{ text: "Вчера",              callback_data: "IMP.1"      }],
+      [{ text: "3 дня",              callback_data: "IMP.3"      }],
+      [{ text: "7 дней",             callback_data: "IMP.7"      }],
+      [{ text: "30 дней",            callback_data: "IMP.30"     }],
+      [{ text: "📅 Другой период...", callback_data: "IMP.custom" }],
+    ]});
+    return;
+  }
 
   const st = states[c];
   if (!st) { await mainMenu(c); return; }
@@ -293,7 +290,15 @@ async function handleBtn(c, d) {
   if (d.startsWith("RM.")) {
     if (d === "RM.custom") {
       states[c] = { waitReportInput: true };
-      await send(c, "📅 Введите:\n\nДата: ДД.ММ.ГГГГ\nМесяц: ММ.ГГГГ");
+      await send(c, "📅 Введите:
+
+Дата: ДД.ММ.ГГГГ
+Месяц: ММ.ГГГГ");
+      return;
+    }
+    if (d === "RM.yest") {
+      const yest = new Date(); yest.setDate(yest.getDate()-1);
+      await showReport(c, { date: fmtD(yest) });
       return;
     }
     const m = parseInt(d.split(".")[1]);
@@ -372,30 +377,11 @@ async function showReport(c, params) {
   try {
     const raw = await callAPI({ action: "report", ...params });
     const data = JSON.parse(raw);
-
     let period = "";
     if (params.date)  period = fmtDRu(params.date);
     if (params.month) period = MONTHS_RU[parseInt(params.month.split("-")[1])] + " " + params.month.split("-")[0];
     if (params.year)  period = params.year + " год";
-
-    let text = "📊 <b>Отчёт: " + period + "</b>\n\n";
-    text += "💰 Доходы: <b>" + fmt(data.income) + " ₽</b>\n";
-    text += "💸 Расходы: <b>" + fmt(data.expense) + " ₽</b>\n";
-    text += "──────────────────\n";
-    text += "📈 Прибыль: <b>" + fmt(data.profit) + " ₽</b>\n";
-
-    if (data.detailsIncome && Object.keys(data.detailsIncome).length > 0) {
-      text += "\n💰 <b>Доходы по статьям:</b>\n";
-      for (const [art, sum] of Object.entries(data.detailsIncome).sort((a,b) => b[1]-a[1])) {
-        text += "  " + art.substring(0,30) + ": " + fmt(sum) + "\n";
-      }
-    }
-    if (data.detailsExpense && Object.keys(data.detailsExpense).length > 0) {
-      text += "\n💸 <b>Расходы по статьям:</b>\n";
-      for (const [art, sum] of Object.entries(data.detailsExpense).sort((a,b) => b[1]-a[1]).slice(0,15)) {
-        text += "  " + art.substring(0,30) + ": " + fmt(sum) + "\n";
-      }
-    }
+    const text = formatReportMsg(data, period);
     await send(c, text, { inline_keyboard: [[{ text: "☰ Меню", callback_data: "MENU" }]] });
   } catch (e) { await send(c, "❌ Ошибка: " + e.message); }
 }
@@ -458,6 +444,10 @@ async function reportMenu(c) {
   const now = new Date();
   const m = now.getMonth() + 1;
   const btns = [];
+  // Быстрые кнопки: вчера и сегодня
+  const yest = new Date(); yest.setDate(yest.getDate()-1);
+  btns.push([{ text: "📅 Вчера " + fmtDRu(fmtD(yest)), callback_data: "RM.yest" }]);
+  // Последние 4 месяца
   for (let i = 0; i < 4; i++) {
     let month = m - i;
     if (month <= 0) month += 12;
@@ -472,6 +462,50 @@ async function reportMenu(c) {
 function fmtD(d) { return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
 function fmtDRu(s) { if(!s) return "—"; const p=s.split("-"); return p[2]+"."+p[1]+"."+p[0]; }
 function fmt(n) { return (typeof n === "number" ? n : 0).toLocaleString("ru-RU",{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+// ─── ФОРМАТИРОВАНИЕ ОТЧЁТА (единый формат везде) ─────────────────────────────
+function formatReportMsg(data, periodLabel) {
+  const ruk = data['руководителю'] || 0;
+  let msg = `📊 <b>Отчёт: ${periodLabel}</b>
+
+`;
+  msg += `💰 Доходы: <b>${fmt(data.income)} ₽</b>
+`;
+  msg += `💸 Расходы: <b>${fmt(data.expense)} ₽</b>
+`;
+  msg += `──────────────────
+`;
+  msg += `📈 Прибыль: <b>${fmt(data.profit)} ₽</b>
+`;
+  if (ruk > 0) {
+    msg += `
+👤 Выплата руководителю: <b>${fmt(ruk)} ₽</b>
+`;
+  }
+
+  // Доходы по проектам
+  if (data.detailsProjects && Object.keys(data.detailsProjects).length > 0) {
+    msg += `
+💰 <b>Доходы по проектам:</b>
+`;
+    for (const [proj, sum] of Object.entries(data.detailsProjects).sort((a,b) => b[1]-a[1])) {
+      msg += `  ${proj.substring(0,28)}: ${fmt(sum)} ₽
+`;
+    }
+  }
+
+  // Расходы по статьям
+  if (data.detailsExpense && Object.keys(data.detailsExpense).length > 0) {
+    msg += `
+💸 <b>Расходы по статьям:</b>
+`;
+    for (const [art, sum] of Object.entries(data.detailsExpense).sort((a,b) => b[1]-a[1]).slice(0,15)) {
+      msg += `  ${art.substring(0,30)}: ${fmt(sum)} ₽
+`;
+    }
+  }
+  return msg;
+}
 
 // ─── ЗАПУСК ИМПОРТА ───────────────────────────────────────────────────────────
 async function runImport(c, days) {
@@ -576,29 +610,37 @@ cron.schedule('0 0 3 * * *', async () => {
 
     let msg;
     if (result.added === 0) {
-      msg = `🌙 Ночной импорт завершён\nОпераций за вчера не найдено.`;
+      msg = `🌙 Ночной импорт завершён
+Операций за вчера не найдено.`;
+      for (const uid of USER_IDS) await send(uid, msg);
     } else {
-      msg = `🌙 <b>Ночной импорт завершён</b>\n`;
-      msg += `📦 Операций добавлено: <b>${result.added}</b>\n\n`;
-      msg += `💰 Доходы: <b>${fmt(totalIncome)} ₽</b>\n`;
-      msg += `💸 Расходы: <b>${fmt(totalExpense)} ₽</b>\n`;
-      msg += `📈 Разница: <b>${fmt(totalIncome - totalExpense)} ₽</b>\n`;
+      // Шапка по счетам
+      msg = `🌙 <b>Ночной импорт завершён</b>
+`;
+      msg += `📦 Операций добавлено: <b>${result.added}</b>
 
-      msg += `\n🏦 <b>По счетам:</b>\n`;
+`;
+      msg += `🏦 <b>По счетам:</b>
+`;
       for (const [acc, s] of Object.entries(byAccount)) {
-        msg += `  ${acc} (${s.cnt} опер.)\n`;
-        if (s.inc > 0) msg += `    💰 +${fmt(s.inc)} ₽\n`;
-        if (s.exp > 0) msg += `    💸 −${fmt(s.exp)} ₽\n`;
+        msg += `  ${acc} (${s.cnt} опер.)
+`;
+        if (s.inc > 0) msg += `    💰 +${fmt(s.inc)} ₽
+`;
+        if (s.exp > 0) msg += `    💸 −${fmt(s.exp)} ₽
+`;
       }
+      for (const uid of USER_IDS) await send(uid, msg);
 
-      const topExp = Object.entries(byArticle).sort((a,b) => b[1]-a[1]).slice(0, 5);
-      if (topExp.length > 0) {
-        msg += `\n💸 <b>Топ расходов:</b>\n`;
-        topExp.forEach(([art, sum]) => { msg += `  ${art.slice(0,28)}: ${fmt(sum)} ₽\n`; });
-      }
+      // Подробный отчёт за вчера
+      try {
+        const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+        const raw = await callAPI({ action: "report", date: fmtD(yesterday) });
+        const data = JSON.parse(raw);
+        const reportMsg = formatReportMsg(data, fmtDRu(fmtD(yesterday)));
+        for (const uid of USER_IDS) await send(uid, reportMsg);
+      } catch(e) { console.error('[CRON] Отчёт:', e.message); }
     }
-
-    for (const uid of USER_IDS) await send(uid, msg);
   } catch (e) {
     console.error('[CRON] Ошибка:', e.message);
     for (const uid of USER_IDS) await send(uid, `❌ Ночной импорт: ошибка — ${e.message}`);
@@ -642,26 +684,34 @@ http.createServer(async (req, res) => {
 
       let msg;
       if (result.added === 0) {
-        msg = "🌙 Ночной импорт завершён\nОпераций за вчера не найдено.";
+        msg = "🌙 Ночной импорт завершён
+Операций за вчера не найдено.";
+        for (const uid of USER_IDS) await send(uid, msg);
       } else {
-        msg = `🌙 <b>Ночной импорт завершён</b>\n`;
-        msg += `📦 Операций добавлено: <b>${result.added}</b>\n\n`;
-        msg += `💰 Доходы: <b>${fmt(totalIncome)} ₽</b>\n`;
-        msg += `💸 Расходы: <b>${fmt(totalExpense)} ₽</b>\n`;
-        msg += `📈 Разница: <b>${fmt(totalIncome - totalExpense)} ₽</b>\n`;
-        msg += `\n🏦 <b>По счетам:</b>\n`;
+        msg = `🌙 <b>Ночной импорт завершён</b>
+`;
+        msg += `📦 Операций добавлено: <b>${result.added}</b>
+
+`;
+        msg += `🏦 <b>По счетам:</b>
+`;
         for (const [acc, s] of Object.entries(byAccount)) {
-          msg += `  ${acc} (${s.cnt} опер.)\n`;
-          if (s.inc > 0) msg += `    💰 +${fmt(s.inc)} ₽\n`;
-          if (s.exp > 0) msg += `    💸 −${fmt(s.exp)} ₽\n`;
+          msg += `  ${acc} (${s.cnt} опер.)
+`;
+          if (s.inc > 0) msg += `    💰 +${fmt(s.inc)} ₽
+`;
+          if (s.exp > 0) msg += `    💸 −${fmt(s.exp)} ₽
+`;
         }
-        const topExp = Object.entries(byArticle).sort((a,b) => b[1]-a[1]).slice(0,5);
-        if (topExp.length > 0) {
-          msg += `\n💸 <b>Топ расходов:</b>\n`;
-          topExp.forEach(([art, sum]) => { msg += `  ${art.slice(0,28)}: ${fmt(sum)} ₽\n`; });
-        }
+        for (const uid of USER_IDS) await send(uid, msg);
+        try {
+          const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+          const raw2 = await callAPI({ action: "report", date: fmtD(yesterday) });
+          const data2 = JSON.parse(raw2);
+          const reportMsg = formatReportMsg(data2, fmtDRu(fmtD(yesterday)));
+          for (const uid of USER_IDS) await send(uid, reportMsg);
+        } catch(e2) { console.error("[CRON-EXT] Отчёт:", e2.message); }
       }
-      for (const uid of USER_IDS) await send(uid, msg);
     } catch (e) {
       console.error("[CRON-EXT] Ошибка:", e.message);
       for (const uid of USER_IDS) await send(uid, `❌ Ночной импорт: ошибка — ${e.message}`);
@@ -669,4 +719,17 @@ http.createServer(async (req, res) => {
   } else {
     res.writeHead(200); res.end("Bot v3 running! " + new Date().toISOString());
   }
-}).listen(PORT, () => console.log("Port " + PORT));
+}).listen(PORT, async () => {
+  console.log("Port " + PORT);
+  // Регистрируем команды бота — появятся в кнопке меню (квадратик с кружочками)
+  try {
+    await tg("setMyCommands", { commands: [
+      { command: "menu",    description: "🏠 Главное меню" },
+      { command: "balance", description: "💰 Баланс по счетам" },
+      { command: "report",  description: "📊 Отчёт за месяц" },
+      { command: "import",  description: "📥 Импорт из Т-Банка" },
+      { command: "cancel",  description: "❌ Отменить действие" },
+    ]});
+    console.log("Команды бота зарегистрированы");
+  } catch(e) { console.error("Ошибка регистрации команд:", e.message); }
+});
