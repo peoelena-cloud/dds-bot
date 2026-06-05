@@ -4,7 +4,7 @@ const fetch = (...args) => import('node-fetch').then(({ default: f }) => f(...ar
 const TBANK_TOKEN     = process.env.TBANK_TOKEN;
 const FIXIE_URL       = process.env.FIXIE_URL;
 const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL
-  || "https://script.google.com/macros/s/AKfycbzLFoUYvY6qDpF9QYj3zrPMIFq6KDpYw39BvuMPp2KKrqhx6F8qs3hVKYwKYt5b8w/exec";
+  || "https://script.google.com/macros/s/AKfycbzYpVia6eZ5zzETWoBFIhsE-1Cox0Wb6-126b633puvTJSIVGNllVGAQ8AowvDKwXyQ/exec";
 
 // Правильный базовый URL T-Bank Business API
 const TBANK_BASE = "https://business.tinkoff.ru/openapi";
@@ -86,11 +86,12 @@ function mapOperation(op, accountName) {
   const desc        = (op.description || op.paymentPurpose || op.purpose || op.merchantName || '').trim();
   const opDate      = (op.operationDate || op.date || op.executionDate || '').slice(0, 10);
   const opId        = op.operationId || op.id || op.externalOperationId || '';
-  // Контрагент: для расходов — получатель, для доходов — отправитель
-  const counterparty = (
-    op.senderName || op.recipientName || op.counterpartyName ||
-    op.debtorName || op.creditorName || op.merchant || ''
-  ).trim();
+  // Контрагент из вложенных объектов payer/recipient
+  const payerName     = (op.payer     && (op.payer.name     || op.payer.inn))     || '';
+  const recipientName = (op.recipient && (op.recipient.name || op.recipient.inn)) || '';
+  // Для поступлений — отправитель (payer), для расходов — получатель (recipient)
+  const rawCounterparty = typeOfOp === 'Credit' ? payerName : recipientName;
+  const counterparty = rawCounterparty.trim();
 
   // Пропускаем нулевые операции
   if (amount === 0) return null;
@@ -192,10 +193,7 @@ async function importOperations(daysAgo = 1) {
 
 
       for (const op of ops) {
-        // Лог полной структуры первой операции
-        if (ops.indexOf(op) === 0) {
-          console.log('[TBank] FULL OP:', JSON.stringify(op).slice(0, 800));
-        }
+
         const row = mapOperation(op, acc.name);
         if (!row) continue;
         try {
