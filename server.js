@@ -755,6 +755,21 @@ http.createServer(async (req, res) => {
       console.error("[CRON-EXT] Ошибка:", e.message);
       for (const uid of USER_IDS) await send(uid, `❌ Ночной импорт: ошибка — ${e.message}`);
     }
+  } else if (req.url === "/cron/report") {
+    // Эндпоинт для cron-job.org — утренний отчёт в 09:00 мск
+    res.writeHead(200); res.end("Report triggered");
+    console.log("[CRON-REPORT] Утренний отчёт...");
+    try {
+      const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+      const dateStr = fmtD(yesterday);
+      const raw = await callAPI({ action: "report", date: dateStr });
+      const data = JSON.parse(raw);
+      const msg = "🌅 <b>Доброе утро!</b>\n\n" + formatReportMsg(data, fmtDRu(dateStr));
+      for (const uid of USER_IDS) await send(uid, msg);
+    } catch(e) {
+      console.error("[CRON-REPORT] Ошибка:", e.message);
+      for (const uid of USER_IDS) await send(uid, "❌ Утренний отчёт: ошибка — " + e.message);
+    }
   } else {
     res.writeHead(200); res.end("Bot v3 running! " + new Date().toISOString());
   }
