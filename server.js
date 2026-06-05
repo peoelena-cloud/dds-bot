@@ -6,7 +6,7 @@ const { importOperations, fetchReport, morningReport } = require('./tbank');
 const USER_IDS = [433916681, 325532225]; // Елена, Аркадий
 
 const BOT_TOKEN = "8410628068:AAGseZ3UI7elPdJi_p7BqAcwXtxQ_kILTSo";
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyzLbOoKnvcwc4fg-40IS8mKE3Ob-pxG-M9C75h6DFpYRaFzFQMpNJkX0ukoMQFsbdj/exec";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzYpVia6eZ5zzETWoBFIhsE-1Cox0Wb6-126b633puvTJSIVGNllVGAQ8AowvDKwXyQ/exec";
 const ALLOWED = [433916681, 325532225];
 
 // ─── СПРАВОЧНИКИ ───────────────────────────────────────────────────────────────
