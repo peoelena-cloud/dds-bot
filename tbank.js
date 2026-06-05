@@ -194,6 +194,10 @@ async function importOperations(daysAgo = 1) {
 
       for (const op of ops) {
 
+        // Лог полей расходной операции
+        if (op.typeOfOperation === 'Debit' && ops.filter(o => o.typeOfOperation === 'Debit').indexOf(op) === 0) {
+          console.log('[TBank] DEBIT FULL OP:', JSON.stringify(op).slice(0, 1000));
+        }
         const row = mapOperation(op, acc.name);
         if (!row) continue;
         try {
