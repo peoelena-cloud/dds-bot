@@ -119,10 +119,17 @@ function mapOperation(op, accountName) {
   let ddsStat;
   if (signIncome) {
     // Поступления
-    if (/перевод собственных средств/i.test(desc)) ddsStat = 'Перемещение средств (поступление)';
-    else if (category === 'incomePeople')    ddsStat = 'Поступления от клиентов';
-    else if (category === 'contragentPeople') ddsStat = 'Поступления от контрагентов';
-    else                                ddsStat = 'Прочие поступления';
+    if (/перевод собственных средств/i.test(desc)) {
+      ddsStat = 'Перемещение средств (поступление)';
+    } else if (category === 'contragentPeople') {
+      ddsStat = 'Поступления от контрагентов';
+    } else if (category === 'incomePeople') {
+      // Если плательщик — юрлицо или ИП → контрагент, иначе → клиент
+      const isCompany = /ООО|АО|ИП|ОАО|ЗАО|НКО|ПАО|ГУП|МУП|ИНДИВИДУАЛЬНЫЙ ПРЕДПРИНИМА/i.test(payerName);
+      ddsStat = isCompany ? 'Поступления от контрагентов' : 'Поступления от клиентов';
+    } else {
+      ddsStat = 'Прочие поступления';
+    }
   } else {
     // Расходы
     if (category === 'fee')                              ddsStat = 'Комиссия за переводы';
