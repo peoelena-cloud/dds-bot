@@ -4,7 +4,7 @@ const fetch = (...args) => import('node-fetch').then(({ default: f }) => f(...ar
 const TBANK_TOKEN     = process.env.TBANK_TOKEN;
 const FIXIE_URL       = process.env.FIXIE_URL;
 const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL
-  || "https://script.google.com/macros/s/AKfycbyzLbOoKnvcwc4fg-40IS8mKE3Ob-pxG-M9C75h6DFpYRaFzFQMpNJkX0ukoMQFsbdj/exec";
+  || "https://script.google.com/macros/s/AKfycbzLFoUYvY6qDpF9QYj3zrPMIFq6KDpYw39BvuMPp2KKrqhx6F8qs3hVKYwKYt5b8w/exec";
 
 // Правильный базовый URL T-Bank Business API
 const TBANK_BASE = "https://business.tinkoff.ru/openapi";
@@ -192,17 +192,9 @@ async function importOperations(daysAgo = 1) {
 
 
       for (const op of ops) {
-        // Лог полей контрагента (временно для диагностики)
+        // Лог полной структуры первой операции
         if (ops.indexOf(op) === 0) {
-          console.log('[TBank] counterparty fields:', JSON.stringify({
-            senderName: op.senderName,
-            recipientName: op.recipientName,
-            counterpartyName: op.counterpartyName,
-            debtorName: op.debtorName,
-            creditorName: op.creditorName,
-            merchant: op.merchant,
-            operationName: op.operationName,
-          }));
+          console.log('[TBank] FULL OP:', JSON.stringify(op).slice(0, 800));
         }
         const row = mapOperation(op, acc.name);
         if (!row) continue;
