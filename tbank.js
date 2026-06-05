@@ -86,12 +86,10 @@ function mapOperation(op, accountName) {
   const desc        = (op.description || op.paymentPurpose || op.purpose || op.merchantName || '').trim();
   const opDate      = (op.operationDate || op.date || op.executionDate || '').slice(0, 10);
   const opId        = op.operationId || op.id || op.externalOperationId || '';
-  // Контрагент из вложенных объектов payer/recipient
-  const payerName     = (op.payer     && (op.payer.name     || op.payer.inn))     || '';
-  const recipientName = (op.recipient && (op.recipient.name || op.recipient.inn)) || '';
-  // Для поступлений — отправитель (payer), для расходов — получатель (recipient)
-  const rawCounterparty = typeOfOp === 'Credit' ? payerName : recipientName;
-  const counterparty = rawCounterparty.trim();
+  // Контрагент: для поступлений — payer.name, для расходов — receiver.name
+  const payerName    = (op.payer    && (op.payer.name    || op.payer.inn))    || '';
+  const receiverName = (op.receiver && (op.receiver.name || op.receiver.inn)) || '';
+  const counterparty = (typeOfOp === 'Credit' ? payerName : receiverName).trim();
 
   // Пропускаем нулевые операции
   if (amount === 0) return null;
@@ -194,10 +192,7 @@ async function importOperations(daysAgo = 1) {
 
       for (const op of ops) {
 
-        // Лог полей расходной операции
-        if (op.typeOfOperation === 'Debit' && ops.filter(o => o.typeOfOperation === 'Debit').indexOf(op) === 0) {
-          console.log('[TBank] DEBIT FULL OP:', JSON.stringify(op).slice(0, 1000));
-        }
+
         const row = mapOperation(op, acc.name);
         if (!row) continue;
         try {
