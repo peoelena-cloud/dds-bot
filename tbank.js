@@ -4,7 +4,7 @@ const fetch = (...args) => import('node-fetch').then(({ default: f }) => f(...ar
 const TBANK_TOKEN     = process.env.TBANK_TOKEN;
 const FIXIE_URL       = process.env.FIXIE_URL;
 const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL
-  || "https://script.google.com/macros/s/AKfycbyuv9Yn94p6PCljw9SandPzOUeENKrk_-eWEkX06XQFTXw4HpdKFWOHmQxlLpPHX6sa/exec";
+  || "https://script.google.com/macros/s/AKfycbyzLbOoKnvcwc4fg-40IS8mKE3Ob-pxG-M9C75h6DFpYRaFzFQMpNJkX0ukoMQFsbdj/exec";
 
 // Правильный базовый URL T-Bank Business API
 const TBANK_BASE = "https://business.tinkoff.ru/openapi";
@@ -83,9 +83,14 @@ function mapOperation(op, accountName) {
 
   const rawAmount = op.operationAmount ?? op.amount ?? op.sum ?? 0;
   const amount    = Math.abs(parseFloat(rawAmount));
-  const desc      = (op.description || op.paymentPurpose || op.purpose || op.merchantName || '').trim();
-  const opDate    = (op.operationDate || op.date || op.executionDate || '').slice(0, 10);
-  const opId      = op.operationId || op.id || op.externalOperationId || '';
+  const desc        = (op.description || op.paymentPurpose || op.purpose || op.merchantName || '').trim();
+  const opDate      = (op.operationDate || op.date || op.executionDate || '').slice(0, 10);
+  const opId        = op.operationId || op.id || op.externalOperationId || '';
+  // Контрагент: для расходов — получатель, для доходов — отправитель
+  const counterparty = (
+    op.senderName || op.recipientName || op.counterpartyName ||
+    op.debtorName || op.creditorName || op.merchant || ''
+  ).trim();
 
   // Пропускаем нулевые операции
   if (amount === 0) return null;
@@ -96,7 +101,7 @@ function mapOperation(op, accountName) {
     return { opId, date: opDate, account: accountName,
              amount, type: isIncomeST ? 'Поступление' : 'Расход',
              dds: isIncomeST ? 'Перемещение средств (поступление)' : 'Перемещение средств (списание)',
-             project: '', comment: desc };
+             project: '', comment: desc, counterparty };
   }
 
   // Карта ПМЖ: пропускаем Продамус
@@ -131,7 +136,7 @@ function mapOperation(op, accountName) {
 
   return { opId, date: opDate, account: accountName,
            amount, type: signIncome ? 'Поступление' : 'Расход',
-           dds: ddsStat, project, comment: desc };
+           dds: ddsStat, project, comment: desc, counterparty };
 }
 
 // ─── Отправка строки в Apps Script ───────────────────────────────────────────
@@ -140,6 +145,7 @@ async function sendToSheet(row) {
     action: 'entry', date: row.date, account: row.account,
     amount: row.amount, article: row.dds, project: row.project,
     comment: `[API] ${row.comment}`, opId: row.opId,
+    counterparty: row.counterparty || '',
   });
   const res = await fetch(`${APPS_SCRIPT_URL}?${params}`);
   const text = await res.text();
@@ -186,6 +192,18 @@ async function importOperations(daysAgo = 1) {
 
 
       for (const op of ops) {
+        // Лог полей контрагента (временно для диагностики)
+        if (ops.indexOf(op) === 0) {
+          console.log('[TBank] counterparty fields:', JSON.stringify({
+            senderName: op.senderName,
+            recipientName: op.recipientName,
+            counterpartyName: op.counterpartyName,
+            debtorName: op.debtorName,
+            creditorName: op.creditorName,
+            merchant: op.merchant,
+            operationName: op.operationName,
+          }));
+        }
         const row = mapOperation(op, acc.name);
         if (!row) continue;
         try {
