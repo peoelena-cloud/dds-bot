@@ -153,6 +153,7 @@ async function sendToSheet(row) {
     comment: `[API] ${row.comment}`, opId: row.opId,
     counterparty: row.counterparty || '',
   });
+
   const res = await fetch(`${APPS_SCRIPT_URL}?${params}`);
   const text = await res.text();
   const trimmed = text.trim();
@@ -190,6 +191,13 @@ async function importOperations(daysAgo = 1) {
   const { from, to, date } = getDateRange(daysAgo);
   const dateStr = date.toLocaleDateString('ru-RU');
   let totalAdded = 0, errors = [], added = [];
+
+  // Прогрев Apps Script перед импортом
+  try {
+    console.log('[TBank] Прогрев Apps Script...');
+    await fetch(`${APPS_SCRIPT_URL}?action=test`);
+    console.log('[TBank] Apps Script прогрет');
+  } catch(e) { console.log('[TBank] Прогрев не удался:', e.message); }
 
   for (const acc of ACCOUNTS) {
     try {
